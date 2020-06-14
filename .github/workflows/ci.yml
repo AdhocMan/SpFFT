@@ -21,8 +21,8 @@ jobs:
             use_mpi: false
 
     env:
-      USE_OMP=${{ use_omp }}
-      USE_MPI=${{ use_mpi }}
+      USE_OMP=${{ matrix.use_omp }}
+      USE_MPI=${{ matrix.use_mpi }}
 
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE
@@ -48,7 +48,7 @@ jobs:
         ${GITHUB_WORKSPACE}/build/tests/run_local_tests
 
     - name: Run tests with MPI
-      if: ${{ use_mpi }}
+      if: ${{ matrix.use_mpi }}
       run: |
         export OMPI_MCA_btl_vader_single_copy_mechanism=none
         mpirun -n 2 ${GITHUB_WORKSPACE}/build/tests/run_mpi_tests
