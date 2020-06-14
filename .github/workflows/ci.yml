@@ -1,0 +1,54 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  #########################
+  # Build and test with GCC
+  #########################
+  build-test-gcc-cpu:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        use_omp: []
+        use_mpi: []
+        run_tests: []
+        include:
+          - use_omp: true
+            use_mpi: true
+          - use_omp: false
+            use_mpi: false
+
+    env:
+      USE_OMP=${{ use_omp }}
+      USE_MPI=${{ use_mpi }}
+
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE
+    - uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y make g++ mpi-default-dev wget git make
+        cd ${HOME} && wget https://github.com/Kitware/CMake/releases/download/v3.11.4/cmake-3.11.4-Linux-x86_64.tar.gz && tar -xzvf cmake-3.11.4-Linux-x86_64.tar.gz
+
+    - name: Build
+      run: |
+        cd ${GITHUB_WORKSPACE}
+        mkdir -p build
+        cd build
+        ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_OMP=${USE_OMP} -DSPFFT_MPI=${USE_MPI}
+        make -j2
+
+    - name: Run tests
+      run: |
+        export OMPI_MCA_btl_vader_single_copy_mechanism=none
+        ${GITHUB_WORKSPACE}/build/tests/run_local_tests
+
+    - name: Run tests with MPI
+      if: ${{ use_mpi }}
+      run: |
+        export OMPI_MCA_btl_vader_single_copy_mechanism=none
+        mpirun -n 2 ${GITHUB_WORKSPACE}/build/tests/run_mpi_tests
