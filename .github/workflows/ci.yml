@@ -11,16 +11,15 @@ jobs:
     runs-on: ubuntu-18.04
     strategy:
       matrix:
-        name: [test]
-        build_type: [release]
-        use_omp: [true]
-        use_mpi: [true]
-        use_float: [true]
+        build_type: [release, debug]
         include:
-          - build_type: debug
-            use_omp: false
+          - use_omp: false
             use_mpi: false
             use_float: false
+
+          - use_omp: true
+            use_mpi: true
+            use_float: true
 
     env:
       USE_OMP: ${{ matrix.use_omp }}
