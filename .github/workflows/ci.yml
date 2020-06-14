@@ -13,7 +13,6 @@ jobs:
       matrix:
         use_omp: [true]
         use_mpi: [true]
-        run_tests: []
         include:
           - use_omp: false
             use_mpi: false
