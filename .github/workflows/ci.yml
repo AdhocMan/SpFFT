@@ -6,20 +6,26 @@ jobs:
   #########################
   # Build and test with GCC
   #########################
-  build-test-gcc-cpu:
+  CPU (BUILD_TYPE, OMP, MPI, FLOAT) = :
     # The type of runner that the job will run on
     runs-on: ubuntu-18.04
     strategy:
       matrix:
+        build_type: [release]
         use_omp: [true]
         use_mpi: [true]
+        use_float: [true]
         include:
-          - use_omp: false
+          - build_type: debug
+            use_omp: false
             use_mpi: false
+            use_float: false
 
     env:
       USE_OMP: ${{ matrix.use_omp }}
       USE_MPI: ${{ matrix.use_mpi }}
+      USE_FLOAT: ${{ matrix.use_float }}
+      BUILD_TYPE: ${{ matrix.build_type }}
 
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE
@@ -36,7 +42,7 @@ jobs:
         cd ${GITHUB_WORKSPACE}
         mkdir -p build
         cd build
-        ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_OMP=${USE_OMP} -DSPFFT_MPI=${USE_MPI}
+        ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_OMP=${USE_OMP} -DSPFFT_MPI=${USE_MPI} -DSPFFT_SINGLE_PRECISION=${USE_FLOAT} -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
         make -j2
 
     - name: Run tests
