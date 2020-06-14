@@ -17,10 +17,6 @@ jobs:
           - use_omp: false
             use_mpi: false
 
-    env:
-      USE_OMP=${{ matrix.use_omp }}
-      USE_MPI=${{ matrix.use_mpi }}
-
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE
     - uses: actions/checkout@v2
@@ -32,6 +28,9 @@ jobs:
         cd ${HOME} && wget https://github.com/Kitware/CMake/releases/download/v3.11.4/cmake-3.11.4-Linux-x86_64.tar.gz && tar -xzvf cmake-3.11.4-Linux-x86_64.tar.gz
 
     - name: Build
+      env:
+        USE_OMP=${{ matrix.use_omp }}
+        USE_MPI=${{ matrix.use_mpi }}
       run: |
         cd ${GITHUB_WORKSPACE}
         mkdir -p build
