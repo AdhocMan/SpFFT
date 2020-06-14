@@ -10,6 +10,7 @@ jobs:
     # The type of runner that the job will run on
     runs-on: ubuntu-18.04
     strategy:
+      fail-fast: false
       matrix:
         build_type: [release, debug]
         use_omp: [true]
@@ -45,6 +46,7 @@ jobs:
 
     - name: Build and install
       run: |
+        mkdir -p build
         cd build
         mkdir -p install_dir
         export INSTALL_DIR=$(pwd)/install_dir
@@ -98,14 +100,14 @@ jobs:
         cd ${GITHUB_WORKSPACE}
         mkdir -p build
         cd build
-        ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_GPU_BACKEND=CUDA
+        ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_GPU_BACKEND=CUDA -DSPFFT_OMP=OFF
         make -j2
 
 
   #################
   # Build with ROCm
   #################
-  build-rocm:
+  ROCM:
     runs-on: ubuntu-18.04
     container: adhocman/master:ubuntu18.04_rocm
 
