@@ -13,11 +13,12 @@ jobs:
       matrix:
         build_type: [release, debug]
         use_omp: [true]
-        use_mpi: [true]
+        use_mpi: [true, false]
         use_float: [true]
         include:
-          - use_omp: false
-            use_mpi: false
+          - build_type: debug
+            use_omp: false
+            use_mpi: true
             use_float: false
 
     env:
