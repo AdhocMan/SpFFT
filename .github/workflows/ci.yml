@@ -21,7 +21,7 @@ jobs:
           - build_type: debug
             compiler: clang
             use_omp: false
-            use_mpi: true
+            use_mpi: false
             use_float: false
 
     env:
@@ -38,7 +38,7 @@ jobs:
 
     - name: Print build config
       run: |
-        echo "Build type: ${BUILD_TYPE}, OpenMP: ${USE_OMP}, MPI: ${USE_MPI}, FLOAT: ${USE_FLOAT}"
+        echo "Compiler: ${COMPILER}, Build type: ${BUILD_TYPE}, OpenMP: ${USE_OMP}, MPI: ${USE_MPI}, FLOAT: ${USE_FLOAT}"
 
     - name: Install dependencies
       run: |
