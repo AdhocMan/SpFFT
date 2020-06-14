@@ -11,12 +11,10 @@ jobs:
     runs-on: ubuntu-18.04
     strategy:
       matrix:
-        use_omp: []
-        use_mpi: []
+        use_omp: [true]
+        use_mpi: [true]
         run_tests: []
         include:
-          - use_omp: true
-            use_mpi: true
           - use_omp: false
             use_mpi: false
 
