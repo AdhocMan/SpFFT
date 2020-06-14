@@ -12,14 +12,13 @@ jobs:
     strategy:
       matrix:
         build_type: [release, debug]
+        use_omp: [true]
+        use_mpi: [true]
+        use_float: [true]
         include:
           - use_omp: false
             use_mpi: false
             use_float: false
-
-          - use_omp: true
-            use_mpi: true
-            use_float: true
 
     env:
       USE_OMP: ${{ matrix.use_omp }}
