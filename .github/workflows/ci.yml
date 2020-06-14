@@ -6,11 +6,12 @@ jobs:
   #########################
   # Build and test with GCC
   #########################
-  CPU (BUILD_TYPE, OMP, MPI, FLOAT) = :
+  CPU:
     # The type of runner that the job will run on
     runs-on: ubuntu-18.04
     strategy:
       matrix:
+        name: test
         build_type: [release]
         use_omp: [true]
         use_mpi: [true]
