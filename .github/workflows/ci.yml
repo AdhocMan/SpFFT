@@ -53,7 +53,7 @@ jobs:
         cd build
         mkdir -p install_dir
         export INSTALL_DIR=$(pwd)/install_dir
-        CXX=${COMPILER} ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_OMP=${USE_OMP} -DSPFFT_MPI=${USE_MPI} -DSPFFT_SINGLE_PRECISION=${USE_FLOAT} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
+        CXX=${COMPILER} ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=OFF -DSPFFT_OMP=${USE_OMP} -DSPFFT_MPI=${USE_MPI} -DSPFFT_SINGLE_PRECISION=${USE_FLOAT} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
         make -j2
         make VERBOSE=1 install
         test -f ${INSTALL_DIR}/lib/libspfft.so
@@ -96,14 +96,14 @@ jobs:
       run: |
         apt-get update
         apt-get install -y libfftw3-dev make g++ mpi-default-dev wget git make
-        cd ${HOME} && wget https://github.com/Kitware/CMake/releases/download/v3.11.4/cmake-3.11.4-Linux-x86_64.tar.gz && tar -xzvf cmake-3.11.4-Linux-x86_64.tar.gz
+        cd ${HOME} && wget https://github.com/Kitware/CMake/releases/download/v3.14.6/cmake-3.14.6-Linux-x86_64.tar.gz && tar -xzvf cmake-3.14.6-Linux-x86_64.tar.gz
 
     - name: Build
       run: |
         cd ${GITHUB_WORKSPACE}
         mkdir -p build
         cd build
-        ${HOME}/cmake-3.11.4-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_GPU_BACKEND=CUDA -DSPFFT_OMP=OFF
+        ${HOME}/cmake-3.14.6-Linux-x86_64/bin/cmake .. -DSPFFT_BUILD_TESTS=ON -DSPFFT_GPU_BACKEND=CUDA -DSPFFT_OMP=OFF
         make -j2
 
 
