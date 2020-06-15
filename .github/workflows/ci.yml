@@ -70,15 +70,13 @@ jobs:
         make -j2
 
     - name: Run tests
-      run: |
-        export OMPI_MCA_btl_vader_single_copy_mechanism=none
-        ${GITHUB_WORKSPACE}/build/tests/run_local_tests
+      env: OMPI_MCA_btl_vader_single_copy_mechanism: none
+      run: ${GITHUB_WORKSPACE}/build/tests/run_local_tests
 
     - name: Run tests with MPI
       if: ${{ matrix.use_mpi }}
-      run: |
-        export OMPI_MCA_btl_vader_single_copy_mechanism=none
-        mpirun -n 2 ${GITHUB_WORKSPACE}/build/tests/run_mpi_tests
+      env: OMPI_MCA_btl_vader_single_copy_mechanism: none
+      run: mpirun -n 2 ${GITHUB_WORKSPACE}/build/tests/run_mpi_tests
 
 
   #################
