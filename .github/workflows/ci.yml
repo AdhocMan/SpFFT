@@ -43,9 +43,13 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libfftw3-dev make g++ clang mpi-default-dev wget git make
+        sudo apt-get install -y libfftw3-dev make g++ clang wget git make
         cd ${HOME} && wget https://github.com/Kitware/CMake/releases/download/v3.11.4/cmake-3.11.4-Linux-x86_64.tar.gz && tar -xzvf cmake-3.11.4-Linux-x86_64.tar.gz
 
+    - name: Install MPI
+      if: ${{ matrix.use_mpi }}
+      run: |
+        sudo apt-get install -y mpi-default-dev
 
     - name: Build and install
       run: |
