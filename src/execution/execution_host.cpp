@@ -42,6 +42,9 @@
 #include "transpose/transpose_mpi_buffered_host.hpp"
 #include "transpose/transpose_mpi_compact_buffered_host.hpp"
 #include "transpose/transpose_mpi_unbuffered_host.hpp"
+#ifdef SPFFT_COSTA
+#include "transpose/transpose_mpi_costa_host.hpp"
+#endif
 #endif
 
 namespace spfft {
@@ -202,8 +205,13 @@ ExecutionHost<T>::ExecutionHost(MPICommunicatorHandle comm, const SpfftExchangeT
 
   switch (exchangeType) {
     case SpfftExchangeType::SPFFT_EXCH_UNBUFFERED: {
+#ifdef SPFFT_COSTA
+      transpose_.reset(
+          new TransposeMPICostaHost<T>(param, comm, freqDomainXY_, freqDomainData_));
+#else
       transpose_.reset(
           new TransposeMPIUnbufferedHost<T>(param, comm, freqDomainXY_, freqDomainData_));
+#endif
     } break;
     case SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED: {
       auto transposeBufferZ = create_1d_view(

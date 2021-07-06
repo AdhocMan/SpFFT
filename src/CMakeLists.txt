@@ -48,6 +48,7 @@ if(SPFFT_MPI)
 		transpose/transpose_mpi_buffered_host.cpp
 		transpose/transpose_mpi_compact_buffered_host.cpp
 		transpose/transpose_mpi_unbuffered_host.cpp
+		transpose/transpose_mpi_costa_host.cpp
 		)
 endif()
 
