@@ -1,10 +1,24 @@
 #include <mpi.h>
+#include <unistd.h>  // for MPI debugging
+
 #include "gtest/gtest.h"
 #include "gtest_mpi/gtest_mpi.hpp"
 
+static auto mpi_world_rank() -> int {
+  int worldRank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+  return worldRank;
+}
 int main(int argc, char* argv[]) {
   // Initialize MPI before any call to gtest_mpi
   MPI_Init(&argc, &argv);
+  // if (mpi_world_rank() == 1) {
+  //   std::cout << "PID = " << getpid() << std::endl;
+  //   bool wait = true;
+  //   while (wait) {
+  //     sleep(5);
+  //   }
+  // }
 
   // Intialize google test
   ::testing::InitGoogleTest(&argc, argv);

@@ -84,10 +84,12 @@ TransposeMPICostaHost<T>::TransposeMPICostaHost(
     costa::block_t localBlock{freqDomainData_.data(), static_cast<int>(param->dim_z()), 0,
                               static_cast<int>(localBlockIdx)};
 
-    freqDomainLayout_.reset(
-        new costa::grid_layout<std::complex<T>>(costa::custom_layout<std::complex<T>>(
-            rowSplit.size() - 1, colSplit.size() - 1, rowSplit.data(), colSplit.data(),
-            owners.data(), param->num_z_sticks(comm_.rank()) > 0, &localBlock, 'C')));
+    if(!owners.empty()){
+      freqDomainLayout_.reset(
+          new costa::grid_layout<std::complex<T>>(costa::custom_layout<std::complex<T>>(
+              rowSplit.size() - 1, colSplit.size() - 1, rowSplit.data(), colSplit.data(),
+              owners.data(), param->num_z_sticks(comm_.rank()) > 0, &localBlock, 'C')));
+    }
   }
 
   // Create layout for space domain
@@ -108,11 +110,11 @@ TransposeMPICostaHost<T>::TransposeMPICostaHost(
     SizeType localRowBlockIdx = 0;
     for(SizeType r =0; r < comm_.size(); ++r) {
       if(param->num_xy_planes(r)) {
-        owners.insert(owners.end(), numGlobalZSticks, static_cast<int>(r));
-        rowSplit.push_back(rowSplit.back() + param->num_xy_planes(r));
         if (r == comm_.rank()) {
           localRowBlockIdx = rowSplit.size() - 1;
         }
+        owners.insert(owners.end(), numGlobalZSticks, static_cast<int>(r));
+        rowSplit.push_back(rowSplit.back() + param->num_xy_planes(r));
       }
     }
 
@@ -128,18 +130,21 @@ TransposeMPICostaHost<T>::TransposeMPICostaHost(
       for (SizeType r = 0; r < comm_.size(); ++r) {
         const auto zStickXYIndices = param->z_stick_xy_indices(r);
         for(auto& index : zStickXYIndices) {
-          localBlocks.push_back({spaceDomainData_.data() + index,
-                                 static_cast<int>(param->dim_x() * param->dim_y()),
-                                 static_cast<int>(localRowBlockIdx), counter});
+          localBlocks.push_back(
+              {spaceDomainData_.data() + index,
+               static_cast<int>(spaceDomainData_.dim_mid() * spaceDomainData_.dim_inner()),
+               static_cast<int>(localRowBlockIdx), counter});
           ++counter;
         }
       }
     }
 
-    spaceDomainLayout_.reset(
-        new costa::grid_layout<std::complex<T>>(costa::custom_layout<std::complex<T>>(
-            rowSplit.size() - 1, colSplit.size() - 1, rowSplit.data(), colSplit.data(),
-            owners.data(), param->num_xy_planes(comm_.rank()) > 0, localBlocks.data(), 'R')));
+    if(!owners.empty()){
+      spaceDomainLayout_.reset(
+          new costa::grid_layout<std::complex<T>>(costa::custom_layout<std::complex<T>>(
+              rowSplit.size() - 1, colSplit.size() - 1, rowSplit.data(), colSplit.data(),
+              owners.data(), localBlocks.size(), localBlocks.data(), 'R')));
+    }
   }
 }
 
@@ -152,8 +157,10 @@ auto TransposeMPICostaHost<T>::exchange_backward_start(const bool nonBlockingExc
   std::memset(static_cast<void*>(spaceDomainData_.data()), 0,
               sizeof(typename decltype(spaceDomainData_)::ValueType) * spaceDomainData_.size());
 
-  costaTransf_.schedule(*freqDomainLayout_, *spaceDomainLayout_, 'N', 1.0, 0.0);
-  costaTransf_.transform();
+  if (freqDomainLayout_ && spaceDomainLayout_) {
+    costaTransf_.schedule(*freqDomainLayout_, *spaceDomainLayout_, 'N', 1.0, 0.0);
+    costaTransf_.transform();
+  }
 }
 
 template <typename T>
@@ -164,8 +171,10 @@ template <typename T>
 auto TransposeMPICostaHost<T>::exchange_forward_start(const bool nonBlockingExchange) -> void {
   assert(omp_get_thread_num() == 0);  // only must thread must be allowed to enter
 
-  costaTransf_.schedule(*spaceDomainLayout_, *freqDomainLayout_, 'N', 1.0, 0.0);
-  costaTransf_.transform();
+  if (freqDomainLayout_ && spaceDomainLayout_) {
+    costaTransf_.schedule(*spaceDomainLayout_, *freqDomainLayout_, 'N', 1.0, 0.0);
+    costaTransf_.transform();
+  }
 }
 
 template <typename T>
