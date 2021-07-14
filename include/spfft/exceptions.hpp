@@ -105,6 +105,20 @@ public:
 };
 
 /**
+ * Library not compiled with COSTA support.
+ */
+class SPFFT_EXPORT CostaSupportError : public GenericError {
+public:
+  auto what() const noexcept -> const char* override {
+    return "SpFFT: Not compiled with COSTA support error";
+  }
+
+  auto error_code() const noexcept -> SpfftError override {
+    return SpfftError::SPFFT_COSTA_SUPPORT_ERROR;
+  }
+};
+
+/**
  * Library not compiled with MPI support.
  */
 class SPFFT_EXPORT MPISupportError : public GenericError {

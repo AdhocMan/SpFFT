@@ -200,6 +200,10 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SpfftExchangeTyp
           new TransposeMPIUnbufferedGPU<T>(param, comm, freqDomainXYHost, freqDomainXYGPU_, stream_,
                                            freqDomainDataHost, freqDomainDataGPU_, stream_));
     } break;
+    case SpfftExchangeType::SPFFT_EXCH_COSTA: {
+                                                // TODO: implement
+      throw CostaSupportError();
+    } break;
     case SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED: {
       const auto bufferZSize = param->total_num_xy_planes() * param->num_z_sticks(comm.rank());
       const auto bufferXYSize = param->total_num_z_sticks() * param->num_xy_planes(comm.rank());

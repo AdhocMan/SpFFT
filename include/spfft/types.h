@@ -58,7 +58,11 @@ enum SpfftExchangeType {
   /**
    * Exchange based on MPI_Alltoallw.
    */
-  SPFFT_EXCH_UNBUFFERED
+  SPFFT_EXCH_UNBUFFERED,
+  /**
+   * Exchange based using the COSTA library.
+   */
+  SPFFT_EXCH_COSTA
 };
 
 /**

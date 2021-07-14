@@ -141,9 +141,15 @@ GridInternal<T>::GridInternal(int maxDimX, int maxDimY, int maxDimZ, int maxNumL
       exchangeType != SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT &&
       exchangeType != SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED &&
       exchangeType != SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT &&
-      exchangeType != SpfftExchangeType::SPFFT_EXCH_UNBUFFERED) {
+      exchangeType != SpfftExchangeType::SPFFT_EXCH_UNBUFFERED &&
+      exchangeType != SpfftExchangeType::SPFFT_EXCH_COSTA) {
     throw InvalidParameterError();
   }
+#ifndef SPFFT_COSTA
+  if (exchangeType == SpfftExchangeType::SPFFT_EXCH_COSTA){
+    throw CostaSupportError();
+  }
+#endif
 
   // compare parameters between ranks
   {

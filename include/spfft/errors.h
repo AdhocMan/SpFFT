@@ -122,7 +122,11 @@ enum SpfftError {
   /**
    * Failure in GPU FFT library call.
    */
-  SPFFT_GPU_FFT_ERROR
+  SPFFT_GPU_FFT_ERROR,
+  /**
+   * Library not compiled with COSTA support.
+   */
+  SPFFT_COSTA_SUPPORT_ERROR
 };
 
 #ifndef __cplusplus

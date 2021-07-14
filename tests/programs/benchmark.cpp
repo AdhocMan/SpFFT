@@ -74,6 +74,8 @@ void run_benchmark(const SpfftTransformType transformType, const int dimX, const
     exchName = "Buffered";
   } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_UNBUFFERED) {
     exchName = "Unbuffered";
+  } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_COSTA) {
+    exchName = "COSTA";
   } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT) {
     exchName = "Compact buffered float";
   } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT) {
@@ -147,7 +149,7 @@ int main(int argc, char** argv) {
       ->default_val("c2c");
   app.add_set("-e", exchName,
               std::set<std::string>{"all", "compact", "compactFloat", "buffered", "bufferedFloat",
-                                    "unbuffered"},
+                                    "unbuffered", "costa"},
               "Exchange type")
       ->required();
   app.add_set("-p", procName, std::set<std::string>{"cpu", "gpu", "gpu-gpu"},
@@ -254,6 +256,11 @@ int main(int argc, char** argv) {
     run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,
                   targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_UNBUFFERED, xyzIndices,
                   numRepeats, numTransforms, freqValuesPointers.data());
+#ifdef SPFFT_COSTA
+    run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,
+                  targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_COSTA, xyzIndices,
+                  numRepeats, numTransforms, freqValuesPointers.data());
+#endif
   } else {
     auto exchangeType = SpfftExchangeType::SPFFT_EXCH_DEFAULT;
     if (exchName == "compact") {
@@ -266,6 +273,8 @@ int main(int argc, char** argv) {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT;
     } else if (exchName == "unbuffered") {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_UNBUFFERED;
+    } else if (exchName == "costa") {
+      exchangeType = SpfftExchangeType::SPFFT_EXCH_COSTA;
     }
 
     run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,

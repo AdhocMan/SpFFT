@@ -75,7 +75,8 @@ integer(c_int), parameter ::                  &
     SPFFT_GPU_INVALID_VALUE_ERROR       = 19, &
     SPFFT_GPU_INVALID_DEVICE_PTR_ERROR  = 20, &
     SPFFT_GPU_COPY_ERROR                = 21, &
-    SPFFT_GPU_FFT_ERROR                 = 22
+    SPFFT_GPU_FFT_ERROR                 = 22, &
+    SPFFT_COSTA_SUPPORT_ERROR           = 23
 
 interface
   !--------------------------

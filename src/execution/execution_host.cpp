@@ -205,12 +205,15 @@ ExecutionHost<T>::ExecutionHost(MPICommunicatorHandle comm, const SpfftExchangeT
 
   switch (exchangeType) {
     case SpfftExchangeType::SPFFT_EXCH_UNBUFFERED: {
+      transpose_.reset(
+          new TransposeMPIUnbufferedHost<T>(param, comm, freqDomainXY_, freqDomainData_));
+    } break;
+    case SpfftExchangeType::SPFFT_EXCH_COSTA: {
 #ifdef SPFFT_COSTA
       transpose_.reset(
           new TransposeMPICostaHost<T>(param, comm, freqDomainXY_, freqDomainData_));
 #else
-      transpose_.reset(
-          new TransposeMPIUnbufferedHost<T>(param, comm, freqDomainXY_, freqDomainData_));
+      throw CostaSupportError();
 #endif
     } break;
     case SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED: {
