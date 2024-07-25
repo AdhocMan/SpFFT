@@ -225,6 +225,11 @@ inline auto pointer_get_attributes(ARGS&&... args) -> StatusType {
   return GPU_PREFIX(PointerGetAttributes)(std::forward<ARGS>(args)...);
 }
 
+template <typename... ARGS>
+inline auto device_get_pcibusid(ARGS&&... args) -> StatusType {
+  return GPU_PREFIX(DeviceGetPCIBusId)(std::forward<ARGS>(args)...);
+}
+
 inline auto get_last_error() -> StatusType { return GPU_PREFIX(GetLastError)(); }
 
 inline auto device_synchronize() -> StatusType { return GPU_PREFIX(DeviceSynchronize)(); }

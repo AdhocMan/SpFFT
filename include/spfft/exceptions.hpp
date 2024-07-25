@@ -301,6 +301,24 @@ public:
   }
 };
 
+/**
+ * Failure in NCCL library call.
+ */
+class SPFFT_EXPORT NCCLError : public GPUError {
+public:
+  NCCLError() noexcept : msg_("SpFFT: NCCL Error") {}
+
+  NCCLError(const char* msg) noexcept : msg_(msg) {}
+
+  auto what() const noexcept -> const char* override { return msg_; }
+
+  auto error_code() const noexcept -> SpfftError override {
+    return SpfftError::SPFFT_GPU_FFT_ERROR;
+  }
+private:
+  const char* msg_;
+};
+
 }  // namespace spfft
 
 #endif

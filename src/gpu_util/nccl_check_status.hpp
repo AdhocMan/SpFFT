@@ -25,22 +25,22 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef SPFFT_NCCL_CHECK_STATUS_HPP
+#define SPFFT_NCCL_CHECK_STATUS_HPP
 
-/*****************
- * CMAKE GENERATED
- *****************/
+#include "spfft/config.h"
+#include "spfft/exceptions.hpp"
 
-#ifndef SPFFT_CONFIG_H
-#define SPFFT_CONFIG_H
+#ifdef SPFFT_NCCL
+#include <nccl.h>
 
-#cmakedefine SPFFT_CUDA
-#cmakedefine SPFFT_ROCM
-#cmakedefine SPFFT_MPI
-#cmakedefine SPFFT_OMP
-#cmakedefine SPFFT_SINGLE_PRECISION
-#cmakedefine SPFFT_GPU_DIRECT
-#cmakedefine SPFFT_NCCL
+namespace spfft {
+inline auto nccl_check_status(ncclResult_t result) -> void {
+  if (result != ncclSuccess && result != ncclInProgress) {
+    throw NCCLError(ncclGetErrorString(result));
+  }
+}
+}  // namespace spfft
 
-#include "spfft/spfft_export.h"
-
+#endif
 #endif

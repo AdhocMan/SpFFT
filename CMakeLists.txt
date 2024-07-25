@@ -36,6 +36,7 @@ option(SPFFT_STATIC "Compile as static library" OFF)
 option(SPFFT_OMP "Compile with OpenMP support" ON)
 option(SPFFT_MPI "Compile with MPI support" ON)
 option(SPFFT_GPU_DIRECT "Compile with GPU direct (GPU aware MPI) support." OFF)
+option(SPFFT_NCCL "Compile with Nvidia NCCL library for communication" OFF)
 option(SPFFT_BUILD_TESTS "Build tests" OFF)
 option(SPFFT_SINGLE_PRECISION "Enable single precision support" OFF)
 option(SPFFT_INSTALL "Enable CMake install commands" ON)
@@ -91,6 +92,14 @@ if(SPFFT_GPU_BACKEND)
 	endif()
 endif()
 mark_as_advanced(SPFFT_CUDA SPFFT_ROCM)
+
+if(SPFFT_GPU_DIRECT AND NOT SPFFT_CUDA AND NOT SPFFT_ROCM)
+	message(FATAL_ERROR "SPFFT_GPU_DIRECT requires CUDA or ROCm GPU backend!")
+endif()
+
+if(SPFFT_NCCL AND NOT SPFFT_CUDA AND NOT SPFFT_MPI)
+	message(FATAL_ERROR "SPFFT_NCCL requires CUDA GPU backend and MPI!")
+endif()
 
 # Fortran
 if(SPFFT_FORTRAN)
@@ -216,6 +225,10 @@ if(NOT SPFFT_MKL AND NOT SPFFT_ARMPL)
 	set(SPFFT_FFTW ON)
 endif()
 
+if(SPFFT_NCCL)
+	find_package(NCCL MODULE REQUIRED)
+	list(APPEND SPFFT_EXTERNAL_LIBS NCCL::NCCL)
+endif()
 
 # generate config.h
 configure_file(include/spfft/config.h.in ${PROJECT_BINARY_DIR}/spfft/config.h)

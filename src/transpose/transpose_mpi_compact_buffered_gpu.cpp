@@ -34,6 +34,7 @@
 #include <cstring>
 #include <utility>
 #include <vector>
+#include <type_traits>
 #include "memory/array_view_utility.hpp"
 #include "memory/host_array_view.hpp"
 #include "parameters/parameters.hpp"
@@ -157,6 +158,10 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
   copy_to_gpu(numXYPlanesHost, numXYPlanesGPU_);
   copy_to_gpu(xyPlaneOffsetsHost, xyPlaneOffsetsGPU_);
   copy_to_gpu(indicesHost, indicesGPU_);
+
+#ifdef SPFFT_NCCL
+  comm_.init_nccl();
+#endif
 }
 
 template <typename T, typename U>
@@ -167,7 +172,8 @@ auto TransposeMPICompactBufferedGPU<T, U>::pack_backward() -> void {
                                    create_1d_view(xyPlaneOffsetsGPU_, 0, xyPlaneOffsetsGPU_.size()),
                                    freqDomainDataGPU_, freqDomainBufferGPU_);
 #ifndef SPFFT_GPU_DIRECT
-    copy_from_gpu_async(freqDomainStream_, freqDomainBufferGPU_, freqDomainBufferHost_);
+    if (!comm_.has_nccl())
+      copy_from_gpu_async(freqDomainStream_, freqDomainBufferGPU_, freqDomainBufferHost_);
 #endif
   }
 }
@@ -181,6 +187,7 @@ auto TransposeMPICompactBufferedGPU<T, U>::unpack_backward() -> void {
         spaceDomainStream_.get()));
     if (spaceDomainBufferGPU_.size() > 0) {
 #ifndef SPFFT_GPU_DIRECT
+    if (!comm_.has_nccl())
       copy_to_gpu_async(spaceDomainStream_, spaceDomainBufferHost_, spaceDomainBufferGPU_);
 #endif
       compact_buffered_unpack_backward(spaceDomainStream_.get(), param_->max_num_z_sticks(),
@@ -196,7 +203,29 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
     -> void {
   assert(omp_get_thread_num() == 0);  // only must thread must be allowed to enter
 
-  gpu::check_status(gpu::stream_synchronize(freqDomainStream_.get()));
+#ifdef SPFFT_NCCL
+  if (comm_.has_nccl()) {
+    auto ncclType = ncclFloat64;
+    if (std::is_same_v<U, float>) ncclType = ncclFloat32;
+
+    ncclGroupStart();
+    for (SizeType r = 0; r < comm_.size(); ++r) {
+      if(r == comm_.rank()) continue;
+      if(freqDomainCount_[r])
+        nccl_check_status(ncclSend(freqDomainBufferGPU_.data() + freqDomainDispls_[r],
+                                   2 * freqDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
+                                   freqDomainStream_.get()));
+      if(spaceDomainCount_[r])
+        nccl_check_status(ncclRecv(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
+                                   2 * spaceDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
+                                   spaceDomainStream_.get()));
+    }
+    ncclGroupEnd();
+
+    // exit
+    return;
+  }
+#endif
 
 #ifdef SPFFT_GPU_DIRECT
   auto sendBufferPtr = freqDomainBufferGPU_.data();
@@ -205,6 +234,8 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
   auto sendBufferPtr = freqDomainBufferHost_.data();
   auto recvBufferPtr = spaceDomainBufferHost_.data();
 #endif
+
+  gpu::check_status(gpu::stream_synchronize(freqDomainStream_.get()));
 
   if (nonBlockingExchange) {
     mpi_check_status(MPI_Ialltoallv(
@@ -241,6 +272,7 @@ template <typename T, typename U>
 auto TransposeMPICompactBufferedGPU<T, U>::unpack_forward() -> void {
   if (freqDomainDataGPU_.size() > 0 && freqDomainBufferGPU_.size() > 0) {
 #ifndef SPFFT_GPU_DIRECT
+    if (!comm_.has_nccl())
     copy_to_gpu_async(freqDomainStream_, freqDomainBufferHost_, freqDomainBufferGPU_);
 #endif
     compact_buffered_unpack_forward(
@@ -255,6 +287,32 @@ template <typename T, typename U>
 auto TransposeMPICompactBufferedGPU<T, U>::exchange_forward_start(const bool nonBlockingExchange)
     -> void {
   assert(omp_get_thread_num() == 0);  // only must thread must be allowed to enter
+
+
+#ifdef SPFFT_NCCL
+  if (comm_.has_nccl()) {
+    auto ncclType = ncclFloat64;
+    if (std::is_same_v<U, float>) ncclType = ncclFloat32;
+
+    ncclGroupStart();
+    for (SizeType r = 0; r < comm_.size(); ++r) {
+      if(r == comm_.rank()) continue;
+      if(spaceDomainCount_[r])
+        nccl_check_status(ncclSend(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
+                                   2 * spaceDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
+                                   spaceDomainStream_.get()));
+      if(freqDomainCount_[r])
+        nccl_check_status(ncclRecv(freqDomainBufferGPU_.data() + freqDomainDispls_[r],
+                                   2 * freqDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
+                                   freqDomainStream_.get()));
+    }
+    ncclGroupEnd();
+
+    // exit
+    return;
+  }
+#endif
+
 
   gpu::check_status(gpu::stream_synchronize(spaceDomainStream_.get()));
 

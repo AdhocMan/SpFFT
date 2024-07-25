@@ -25,22 +25,48 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef SPFFT_NCCL_COMM_HANDLE_HPP
+#define SPFFT_NCCL_COMM_HANDLE_HPP
 
-/*****************
- * CMAKE GENERATED
- *****************/
+#include "spfft/config.h"
+#if defined(SPFFT_NCCL) | defined(SPFFT_MPI)
+#include <memory>
+#include <tuple>
+#include <nccl.h>
+#include "spfft/exceptions.hpp"
+#include "gpu_util/nccl_check_status.hpp"
 
-#ifndef SPFFT_CONFIG_H
-#define SPFFT_CONFIG_H
+namespace spfft {
+class NCCLCommHandle {
+public:
+  // explicit NCCLCommHandle()  {
+  //   ncclComm_t comm;
 
-#cmakedefine SPFFT_CUDA
-#cmakedefine SPFFT_ROCM
-#cmakedefine SPFFT_MPI
-#cmakedefine SPFFT_OMP
-#cmakedefine SPFFT_SINGLE_PRECISION
-#cmakedefine SPFFT_GPU_DIRECT
-#cmakedefine SPFFT_NCCL
+  //   ncclUniqueId id;
+  //   nccl_check_status(ncclGetUniqueId(&id));
+  //   nccl_check_status(ncclGroupStart());
+  //   nccl_check_status(ncclCommInitRank(&comm, 1, id, 0));
+  //   nccl_check_status(ncclGroupEnd());
 
-#include "spfft/spfft_export.h"
+  //   comm_ = std::shared_ptr<ncclComm_t>(new ncclComm_t(comm), [](ncclComm_t* ptr) {
+  //     std::ignore = ncclCommDestroy(*ptr);
+  //     delete ptr;
+  //   });
+  // };
 
+  explicit NCCLCommHandle(ncclComm_t comm) {
+    comm_ = std::shared_ptr<ncclComm_t>(new ncclComm_t(comm), [](ncclComm_t* ptr) {
+      std::ignore = ncclCommDestroy(*ptr);
+      delete ptr;
+    });
+  };
+
+  inline auto get() const -> ncclComm_t { return *comm_; }
+
+private:
+  std::shared_ptr<ncclComm_t> comm_;
+};
+}  // namespace spfft
+
+#endif
 #endif

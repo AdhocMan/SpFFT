@@ -122,7 +122,11 @@ enum SpfftError {
   /**
    * Failure in GPU FFT library call.
    */
-  SPFFT_GPU_FFT_ERROR
+  SPFFT_GPU_FFT_ERROR,
+  /**
+   * Failure in NCCL library call.
+   */
+  SPFFT_NCCL_ERROR
 };
 
 #ifndef __cplusplus
