@@ -210,7 +210,7 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
 
     ncclGroupStart();
     for (SizeType r = 0; r < comm_.size(); ++r) {
-      if(r == comm_.rank()) continue;
+      // if(r == comm_.rank()) continue;
       if(freqDomainCount_[r])
         nccl_check_status(ncclSend(freqDomainBufferGPU_.data() + freqDomainDispls_[r],
                                    2 * freqDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
@@ -296,7 +296,7 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_forward_start(const bool non
 
     ncclGroupStart();
     for (SizeType r = 0; r < comm_.size(); ++r) {
-      if(r == comm_.rank()) continue;
+      // if(r == comm_.rank()) continue;
       if(spaceDomainCount_[r])
         nccl_check_status(ncclSend(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
                                    2 * spaceDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
