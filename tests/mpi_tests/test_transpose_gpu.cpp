@@ -242,6 +242,9 @@ static auto param_type_names(
     case SPFFT_EXCH_BACKEND_NCCL: {
       name += "NCCL";
     } break;
+    case SPFFT_EXCH_BACKEND_LOCAL: {
+      name += "LOCAL";
+    } break;
   }
 
   return name;

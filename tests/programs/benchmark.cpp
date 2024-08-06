@@ -82,6 +82,9 @@ void run_benchmark(const MPICommunicatorHandle& comm, const SpfftTransformType t
     case SPFFT_EXCH_BACKEND_NCCL:
       exchBackendName = "NCCL";
       break;
+    case SPFFT_EXCH_BACKEND_LOCAL:
+      exchBackendName = "Local";
+      break;
   }
   if (comm.rank() == 0)
     std::cout << "Backend for " << exchName << ": " << exchBackendName << std::endl;

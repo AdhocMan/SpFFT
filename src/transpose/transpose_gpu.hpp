@@ -114,6 +114,8 @@ public:
 
   auto unpack_forward() -> void override {}
 
+  auto exchange_backend() -> SpfftExchangeBackend override { return SPFFT_EXCH_BACKEND_LOCAL; }
+
 private:
   GPUStreamHandle stream_;
   GPUArrayView3D<ComplexType> spaceDomainData_;

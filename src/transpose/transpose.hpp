@@ -60,7 +60,7 @@ public:
     this->unpack_backward();
   }
 
-  virtual auto exchange_backend() -> SpfftExchangeBackend { return SPFFT_EXCH_BACKEND_MPI_HOST; }
+  virtual auto exchange_backend() -> SpfftExchangeBackend = 0;
 
   virtual ~Transpose() = default;
 };

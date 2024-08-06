@@ -118,6 +118,10 @@ enum SpfftExecType {
 
 enum SpfftExchangeBackend {
   /**
+   * Exchange using local kernel
+   */
+  SPFFT_EXCH_BACKEND_LOCAL,
+  /**
    * Exchange using MPI with host memory
    */
   SPFFT_EXCH_BACKEND_MPI_HOST,

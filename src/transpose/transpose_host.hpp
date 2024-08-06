@@ -154,6 +154,8 @@ public:
     }
   }
 
+  auto exchange_backend() -> SpfftExchangeBackend override { return SPFFT_EXCH_BACKEND_LOCAL; }
+
 private:
   HostArrayView3D<ComplexType> spaceDomainData_;
   HostArrayView2D<ComplexType> freqDomainData_;

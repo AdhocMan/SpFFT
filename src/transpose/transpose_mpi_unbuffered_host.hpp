@@ -60,6 +60,8 @@ public:
   auto exchange_forward_start(const bool nonBlockingExchange) -> void override;
   auto exchange_forward_finalize() -> void override;
 
+  auto exchange_backend() -> SpfftExchangeBackend override { return SPFFT_EXCH_BACKEND_MPI_HOST; }
+
 private:
   MPICommunicatorHandle comm_;
   MPIRequestHandle mpiRequest_;

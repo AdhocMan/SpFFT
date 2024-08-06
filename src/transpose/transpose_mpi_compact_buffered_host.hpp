@@ -74,6 +74,8 @@ public:
   auto exchange_forward_finalize() -> void override;
   auto unpack_forward() -> void override;
 
+  auto exchange_backend() -> SpfftExchangeBackend override { return SPFFT_EXCH_BACKEND_MPI_HOST; }
+
 private:
   std::shared_ptr<Parameters> param_;
   MPIDatatypeHandle mpiTypeHandle_;
