@@ -39,6 +39,10 @@ integer(c_int), parameter ::                  &
     SPFFT_EXCH_COMPACT_BUFFERED_FLOAT   = 4,  &
     SPFFT_EXCH_UNBUFFERED               = 5,  &
 
+    SPFFT_EXCH_BACKEND_MPI_HOST         = 0,  &
+    SPFFT_EXCH_BACKEND_MPI_GPU          = 1,  &
+    SPFFT_EXCH_BACKEND_NCCL             = 2,  &
+
     SPFFT_PU_HOST                       = 1,  &
     SPFFT_PU_GPU                        = 2,  &
 
@@ -263,6 +267,12 @@ interface
     use iso_c_binding
     type(c_ptr), value :: grid
     integer(c_int), value :: mode
+  end function
+
+  integer(c_int) function spfft_transform_exchange_backend(grid, exchBackend) bind(C)
+    use iso_c_binding
+    type(c_ptr), value :: grid
+    integer(c_int), intent(out) :: exchBackend
   end function
 
   integer(c_int) function spfft_float_grid_communicator(grid, comm) &
@@ -675,6 +685,12 @@ interface
     use iso_c_binding
     type(c_ptr), value :: grid
     integer(c_int), value :: mode
+  end function
+
+  integer(c_int) function spfft_float_transform_exchange_backend(grid, exchBackend) bind(C)
+    use iso_c_binding
+    type(c_ptr), value :: grid
+    integer(c_int), intent(out) :: exchBackend
   end function
 
   integer(c_int) function spfft_float_transform_communicator(transform, comm) &

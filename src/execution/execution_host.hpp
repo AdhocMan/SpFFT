@@ -80,6 +80,8 @@ public:
   // Access the space domain data
   auto space_domain_data() -> HostArrayView3D<T>;
 
+  auto exchange_backend() const -> SpfftExchangeBackend { return transpose_->exchange_backend(); }
+
 private:
   int numThreads_;
   T scalingFactor_;

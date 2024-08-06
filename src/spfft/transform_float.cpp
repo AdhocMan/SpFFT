@@ -163,6 +163,10 @@ void TransformFloat::set_execution_mode(SpfftExecType mode) {return transform_->
 MPI_Comm TransformFloat::communicator() const { return transform_->communicator(); }
 #endif
 
+SpfftExchangeBackend TransformFloat::exchange_backend() const {
+  return transform_->exchange_backend();
+}
+
 }  // namespace spfft
 
 //---------------------
@@ -525,6 +529,21 @@ SpfftError spfft_float_transform_set_execution_mode(SpfftFloatTransform transfor
   }
   try {
     reinterpret_cast<spfft::TransformFloat*>(transform)->set_execution_mode(mode);
+  } catch (const spfft::GenericError& e) {
+    return e.error_code();
+  } catch (...) {
+    return SpfftError::SPFFT_UNKNOWN_ERROR;
+  }
+  return SpfftError::SPFFT_SUCCESS;
+}
+
+SpfftError spfft_float_transform_exchange_backend(SpfftFloatTransform transform,
+                                                  SpfftExchangeBackend* exchBackend) {
+  if (!transform) {
+    return SpfftError::SPFFT_INVALID_HANDLE_ERROR;
+  }
+  try {
+    *exchBackend = reinterpret_cast<spfft::TransformFloat*>(transform)->exchange_backend();
   } catch (const spfft::GenericError& e) {
     return e.error_code();
   } catch (...) {

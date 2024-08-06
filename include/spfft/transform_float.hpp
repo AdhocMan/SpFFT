@@ -214,6 +214,12 @@ public:
   int num_threads() const;
 
   /**
+   * Access the exchange backend used.
+   * @return Exchange backend.
+   */
+  SpfftExchangeBackend exchange_backend() const;
+
+  /**
    * Access a transform parameter.
    * @return The execution mode. Only affects execution on GPU. Defaults to SPFFT_EXEC_SYNCHRONOUS.
    */

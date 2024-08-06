@@ -105,6 +105,8 @@ public:
     externalStream_ = stream;
   }
 
+  auto exchange_backend() const -> SpfftExchangeBackend { return transpose_->exchange_backend(); }
+
 private:
   GPUStreamHandle stream_;
   gpu::StreamType externalStream_;

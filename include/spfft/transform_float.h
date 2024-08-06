@@ -337,6 +337,16 @@ SPFFT_EXPORT SpfftError spfft_float_transform_execution_mode(SpfftFloatTransform
 SPFFT_EXPORT SpfftError spfft_float_transform_set_execution_mode(SpfftFloatTransform transform,
                                                                  SpfftExecType mode);
 
+
+/**
+ * Access a transform parameter.
+ * @param[in] transform Handle to the transform.
+ * @param[out] exchBackend The exchange backend used.
+ * @return Error code or SPFFT_SUCCESS.
+ */
+SPFFT_EXPORT SpfftError spfft_float_transform_exchange_backend(SpfftFloatTransform transform,
+                                                               SpfftExchangeBackend* exchBackend);
+
 #ifdef SPFFT_MPI
 /**
  * Access a transform parameter.

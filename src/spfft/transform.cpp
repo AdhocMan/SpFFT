@@ -169,6 +169,8 @@ void Transform::set_execution_mode(SpfftExecType mode) {return transform_->set_e
 MPI_Comm Transform::communicator() const { return transform_->communicator(); }
 #endif
 
+SpfftExchangeBackend Transform::exchange_backend() const { return transform_->exchange_backend(); }
+
 }  // namespace spfft
 
 //---------------------
@@ -493,6 +495,21 @@ SpfftError spfft_transform_num_threads(SpfftTransform transform, int* numThreads
   }
   try {
     *numThreads = reinterpret_cast<spfft::Transform*>(transform)->num_threads();
+  } catch (const spfft::GenericError& e) {
+    return e.error_code();
+  } catch (...) {
+    return SpfftError::SPFFT_UNKNOWN_ERROR;
+  }
+  return SpfftError::SPFFT_SUCCESS;
+}
+
+SpfftError spfft_transform_exchange_backend(SpfftTransform transform,
+                                            SpfftExchangeBackend* exchBackend) {
+  if (!transform) {
+    return SpfftError::SPFFT_INVALID_HANDLE_ERROR;
+  }
+  try {
+    *exchBackend = reinterpret_cast<spfft::Transform*>(transform)->exchange_backend();
   } catch (const spfft::GenericError& e) {
     return e.error_code();
   } catch (...) {

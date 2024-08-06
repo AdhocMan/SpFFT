@@ -132,6 +132,11 @@ public:
 
   auto space_domain_data(SpfftProcessingUnitType location) -> T*;
 
+  auto exchange_backend() const -> SpfftExchangeBackend {
+    if(execGPU_) return execGPU_->exchange_backend();
+    return execHost_->exchange_backend();
+  }
+
 private:
   SpfftProcessingUnitType executionUnit_;
   SpfftExecType execMode_;

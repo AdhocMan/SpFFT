@@ -9,6 +9,7 @@
 #include <random>
 #include <thread>
 #include <vector>
+
 #include "fft/transform_1d_host.hpp"
 #include "memory/array_view_utility.hpp"
 #include "memory/host_array.hpp"
@@ -25,6 +26,7 @@
 
 #ifdef SPFFT_MPI
 #include <mpi.h>
+
 #include "mpi_util/mpi_communicator_handle.hpp"
 #include "mpi_util/mpi_init_handle.hpp"
 #endif
@@ -37,17 +39,28 @@
 
 using namespace spfft;
 
-void run_benchmark(const SpfftTransformType transformType, const int dimX, const int dimY,
-                   const int dimZ, const int numLocalZSticks, const int numLocalXYPlanes,
-                   const SpfftProcessingUnitType executionUnit,
+void run_benchmark(const MPICommunicatorHandle& comm, const SpfftTransformType transformType,
+                   const int dimX, const int dimY, const int dimZ, const int numLocalZSticks,
+                   const int numLocalXYPlanes, const SpfftProcessingUnitType executionUnit,
                    const SpfftProcessingUnitType targetUnit, const int numThreads,
                    const SpfftExchangeType exchangeType, const std::vector<int>& indices,
                    const int numRepeats, const int numTransforms, double** freqValuesPTR) {
   std::vector<Transform> transforms;
+  std::string exchName("Compact buffered");
+  if (exchangeType == SpfftExchangeType::SPFFT_EXCH_BUFFERED) {
+    exchName = "Buffered";
+  } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_UNBUFFERED) {
+    exchName = "Unbuffered";
+  } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT) {
+    exchName = "Compact buffered float";
+  } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT) {
+    exchName = "Buffered float";
+  }
+
   for (int t = 0; t < numTransforms; ++t) {
 #ifdef SPFFT_MPI
     Grid grid(dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit, numThreads,
-              MPI_COMM_WORLD, exchangeType);
+              comm.get(), exchangeType);
 #else
     Grid grid(dimX, dimY, dimZ, numLocalZSticks, executionUnit, numThreads);
 #endif
@@ -57,6 +70,22 @@ void run_benchmark(const SpfftTransformType transformType, const int dimX, const
         SpfftIndexFormatType::SPFFT_INDEX_TRIPLETS, indices.data());
     transforms.emplace_back(std::move(transform));
   }
+
+  std::string exchBackendName;
+  switch (transforms.front().exchange_backend()) {
+    case SPFFT_EXCH_BACKEND_MPI_HOST:
+      exchBackendName = "MPI - Host";
+      break;
+    case SPFFT_EXCH_BACKEND_MPI_GPU:
+      exchBackendName = "MPI - GPU";
+      break;
+    case SPFFT_EXCH_BACKEND_NCCL:
+      exchBackendName = "NCCL";
+      break;
+  }
+  if (comm.rank() == 0)
+    std::cout << "Backend for " << exchName << ": " << exchBackendName << std::endl;
+
   std::vector<SpfftProcessingUnitType> targetUnits(numTransforms, targetUnit);
   std::vector<SpfftScalingType> scalingTypes(numTransforms, SPFFT_NO_SCALING);
 
@@ -67,17 +96,6 @@ void run_benchmark(const SpfftTransformType transformType, const int dimX, const
                              targetUnits.data());
     multi_transform_forward(transforms.size(), transforms.data(), targetUnits.data(), freqValuesPTR,
                             scalingTypes.data());
-  }
-
-  std::string exchName("Compact buffered");
-  if (exchangeType == SpfftExchangeType::SPFFT_EXCH_BUFFERED) {
-    exchName = "Buffered";
-  } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_UNBUFFERED) {
-    exchName = "Unbuffered";
-  } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT) {
-    exchName = "Compact buffered float";
-  } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT) {
-    exchName = "Buffered float";
   }
 
   HOST_TIMING_SCOPED(exchName)
@@ -106,7 +124,6 @@ int main(int argc, char** argv) {
   const SizeType commRank = 0;
   const SizeType commSize = 1;
 #endif
-
 
 #if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
   // set device for multi-gpu nodes
@@ -155,7 +172,7 @@ int main(int argc, char** argv) {
   CLI11_PARSE(app, argc, argv);
 
   auto transformType = SPFFT_TRANS_C2C;
-  if(transformTypeName == "r2c") {
+  if (transformTypeName == "r2c") {
     transformType = SPFFT_TRANS_R2C;
   }
 
@@ -168,8 +185,7 @@ int main(int argc, char** argv) {
 
   const int numThreads = omp_get_max_threads();
 
-  const SizeType numLocalXYPlanes =
-      (dimZ / commSize) + (commRank < dimZ % commSize ? 1 : 0);
+  const SizeType numLocalXYPlanes = (dimZ / commSize) + (commRank < dimZ % commSize ? 1 : 0);
   int numLocalZSticks = 0;
 
   std::vector<int> xyzIndices;
@@ -188,9 +204,8 @@ int main(int argc, char** argv) {
     // distribute z-sticks as evenly as possible
     numLocalZSticks = (xyIndicesGlobal.size()) / commSize +
                       (commRank < (xyIndicesGlobal.size()) % commSize ? 1 : 0);
-    const int offset =
-        ((xyIndicesGlobal.size()) / commSize) * commRank +
-        std::min(commRank, static_cast<SizeType>(xyIndicesGlobal.size()) % commSize);
+    const int offset = ((xyIndicesGlobal.size()) / commSize) * commRank +
+                       std::min(commRank, static_cast<SizeType>(xyIndicesGlobal.size()) % commSize);
 
     // assemble index triplets
     xyzIndices.reserve(numLocalZSticks);
@@ -229,9 +244,15 @@ int main(int argc, char** argv) {
 #endif
 
 #ifdef SPFFT_GPU_DIRECT
-      const bool gpuDirectEnabled = true;
+  const bool gpuDirectEnabled = true;
 #else
-      const bool gpuDirectEnabled = false;
+  const bool gpuDirectEnabled = false;
+#endif
+
+#ifdef SPFFT_NCCL
+  const bool ncclEnabled = true;
+#else
+  const bool ncclEnabled = false;
 #endif
 
   if (commRank == 0) {
@@ -240,19 +261,19 @@ int main(int argc, char** argv) {
     std::cout << "Transform type: " << transformTypeName << std::endl;
     std::cout << "Sparsity: " << sparsity << std::endl;
     std::cout << "Proc: " << procName << std::endl;
-    std::cout << "GPU Direct: " << (gpuDirectEnabled ? "Enabled" : "Disabled") << std::endl;
   }
 
   if (exchName == "all") {
-    run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,
-                  targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_BUFFERED, xyzIndices,
-                  numRepeats, numTransforms, freqValuesPointers.data());
-    run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,
-                  targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED,
+    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+                  executionUnit, targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_BUFFERED,
                   xyzIndices, numRepeats, numTransforms, freqValuesPointers.data());
-    run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,
-                  targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_UNBUFFERED, xyzIndices,
-                  numRepeats, numTransforms, freqValuesPointers.data());
+    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+                  executionUnit, targetUnit, numThreads,
+                  SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED, xyzIndices, numRepeats,
+                  numTransforms, freqValuesPointers.data());
+    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+                  executionUnit, targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_UNBUFFERED,
+                  xyzIndices, numRepeats, numTransforms, freqValuesPointers.data());
   } else {
     auto exchangeType = SpfftExchangeType::SPFFT_EXCH_DEFAULT;
     if (exchName == "compact") {
@@ -267,9 +288,9 @@ int main(int argc, char** argv) {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_UNBUFFERED;
     }
 
-    run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,
-                  targetUnit, numThreads, exchangeType, xyzIndices, numRepeats, numTransforms,
-                  freqValuesPointers.data());
+    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+                  executionUnit, targetUnit, numThreads, exchangeType, xyzIndices, numRepeats,
+                  numTransforms, freqValuesPointers.data());
   }
 
   if (commRank == 0) {
@@ -285,12 +306,13 @@ int main(int argc, char** argv) {
       std::string time(std::ctime(&t));
       time.pop_back();
 
-      j["timings"] =nlohmann::json::parse(timingResults.json());
+      j["timings"] = nlohmann::json::parse(timingResults.json());
 
       const bool data_on_gpu = procName == "gpu-gpu";
       j["parameters"] = {{"proc", procName},
                          {"data_on_gpu", data_on_gpu},
                          {"gpu_direct", gpuDirectEnabled},
+                         {"nccl", ncclEnabled},
                          {"num_ranks", commSize},
                          {"num_threads", numThreads},
                          {"dim_x", dimX},
