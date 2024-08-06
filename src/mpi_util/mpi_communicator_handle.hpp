@@ -41,15 +41,14 @@
 #include <vector>
 
 #include "mpi_util/mpi_check_status.hpp"
+#include "mpi_util/system_topology.hpp"
 #include "spfft/config.h"
 #include "spfft/exceptions.hpp"
 #include "util/common_types.hpp"
 
-#ifdef SPFFT_NCCL
+#if defined(SPFFT_CUDA) && defined(SPFFT_NCCL)
 #include "gpu_util/nccl_comm_handle.hpp"
-#if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
 #include "gpu_util/gpu_runtime_api.hpp"
-#endif
 #endif
 
 
@@ -105,64 +104,22 @@ public:
     return ncclComm_.value();
   }
 
-  inline auto init_nccl() -> void {
-    // check if multiple MPI ranks per GPU
+  inline auto init_nccl() -> bool {
+    if (this->has_nccl()) return true;
+    try {
+      ncclComm_t comm;
+      ncclUniqueId id;
+      if (this->rank() == 0) nccl_check_status(ncclGetUniqueId(&id));
+      MPI_Bcast(&id, sizeof(decltype(id)), MPI_BYTE, 0, this->get());
 
-    // generate unique host machine hash
-    std::string hostName;
-    hostName.resize(1024);
-    std::ignore = gethostname(hostName.data(), hostName.size());
-    auto hostHash = std::hash<std::string>{}(hostName);
-
-    std::ifstream bootIdFile("/proc/sys/kernel/random/boot_id");
-    if (bootIdFile.is_open()) {
-      std::stringstream fileStream;
-      fileStream << bootIdFile.rdbuf();
-      std::string bootString = fileStream.str();
-      hostHash ^= std::hash<std::string>{}(bootString);
+      nccl_check_status(ncclGroupStart());
+      nccl_check_status(ncclCommInitRank(&comm, this->size(), id, this->rank()));
+      nccl_check_status(ncclGroupEnd());
+      ncclComm_ = NCCLCommHandle(comm);
+      return true;
+    } catch (...) {
     }
-
-    // generate GPU hash
-    std::string gpuPCIId;
-    gpuPCIId.resize(13);
-    int deviceId = 0;
-    gpu::check_status(gpu::get_device(&deviceId));
-    gpu::check_status(gpu::device_get_pcibusid(gpuPCIId.data(), gpuPCIId.size(), deviceId));
-    auto deviceHash = std::hash<std::string>{}(gpuPCIId);
-
-    // compare hashes
-    std::vector<decltype(hostHash)> hostHashes(this->size());
-    mpi_check_status(MPI_Allgather(&hostHash, sizeof(decltype(hostHash)), MPI_BYTE,
-                                   hostHashes.data(), sizeof(decltype(hostHash)), MPI_BYTE,
-                                   this->get()));
-    std::vector<decltype(deviceHash)> deviceHashes(this->size());
-    mpi_check_status(MPI_Allgather(&deviceHash, sizeof(decltype(deviceHash)), MPI_BYTE,
-                                   deviceHashes.data(), sizeof(decltype(deviceHash)), MPI_BYTE,
-                                   this->get()));
-    bool oversubsribed = false;
-    for (SizeType r = 0; r < this->size(); ++r) {
-      if (r == this->rank()) continue;
-      if (deviceHashes[r] == deviceHash && hostHashes[r] == hostHash) oversubsribed = true;
-    }
-    mpi_check_status(
-        MPI_Allreduce(MPI_IN_PLACE, &oversubsribed, 1, MPI_C_BOOL, MPI_LOR, this->get()));
-
-    // Try to initialize NCCL. Fails, if there are multiple MPI ranks per GPU.
-    if (!oversubsribed) {
-      try {
-        ncclComm_t comm;
-
-        ncclUniqueId id;
-        if (this->rank() == 0) nccl_check_status(ncclGetUniqueId(&id));
-        MPI_Bcast(&id, sizeof(decltype(id)), MPI_BYTE, 0, this->get());
-
-        nccl_check_status(ncclGroupStart());
-        nccl_check_status(ncclCommInitRank(&comm, this->size(), id, this->rank()));
-        nccl_check_status(ncclGroupEnd());
-        ncclComm_ = NCCLCommHandle(comm);
-      } catch (...) {
-      }
-    }
+    return false;
   }
 #endif
 

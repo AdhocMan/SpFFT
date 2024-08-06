@@ -51,13 +51,14 @@
 namespace spfft {
 template <typename T>
 TransposeMPIUnbufferedGPU<T>::TransposeMPIUnbufferedGPU(
-    const std::shared_ptr<Parameters>& param, MPICommunicatorHandle comm,
-    HostArrayView3D<ComplexType> spaceDomainData,
+    const std::shared_ptr<Parameters>& param, SpfftExchangeBackend exchBackend,
+    MPICommunicatorHandle comm, HostArrayView3D<ComplexType> spaceDomainData,
     GPUArrayView3D<typename gpu::fft::ComplexType<ValueType>::type> spaceDomainDataGPU,
     GPUStreamHandle spaceDomainStream, HostArrayView2D<ComplexType> freqDomainData,
     GPUArrayView2D<typename gpu::fft::ComplexType<ValueType>::type> freqDomainDataGPU,
     GPUStreamHandle freqDomainStream)
-    : comm_(std::move(comm)),
+    : exchBackend_(exchBackend),
+      comm_(std::move(comm)),
       spaceDomainBufferHost_(spaceDomainData),
       freqDomainBufferHost_(freqDomainData),
       spaceDomainBufferGPU_(spaceDomainDataGPU),
@@ -71,6 +72,11 @@ TransposeMPIUnbufferedGPU<T>::TransposeMPIUnbufferedGPU(
   assert(param->num_xy_planes(comm_.rank()) == spaceDomainData.dim_outer());
   assert(param->dim_z() == freqDomainData.dim_inner());
   assert(param->num_z_sticks(comm_.rank()) == freqDomainData.dim_outer());
+
+  assert(exchBackend_ != SPFFT_EXCH_BACKEND_NCCL);
+#ifndef SPFFT_GPU_DIRECT
+  assert(exchBackend_ != SPFFT_EXCH_BACKEND_MPI_GPU);
+#endif
 
   // create underlying type
   MPIDatatypeHandle complexType =
@@ -149,25 +155,24 @@ TransposeMPIUnbufferedGPU<T>::TransposeMPIUnbufferedGPU(
 
 template <typename T>
 auto TransposeMPIUnbufferedGPU<T>::pack_backward() -> void {
-#ifdef SPFFT_GPU_DIRECT
-  gpu::check_status(gpu::memset_async(
-      static_cast<void*>(spaceDomainBufferGPU_.data()), 0,
-      spaceDomainBufferGPU_.size() * sizeof(typename decltype(spaceDomainBufferGPU_)::ValueType),
-      spaceDomainStream_.get()));
-#else
-  copy_from_gpu_async(freqDomainStream_, freqDomainBufferGPU_, freqDomainBufferHost_);
-  // zero target data location (not all values are overwritten upon unpacking)
-  std::memset(
-      static_cast<void*>(spaceDomainBufferHost_.data()), 0,
-      sizeof(typename decltype(spaceDomainBufferHost_)::ValueType) * spaceDomainBufferHost_.size());
-#endif
+  if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST) {
+    copy_from_gpu_async(freqDomainStream_, freqDomainBufferGPU_, freqDomainBufferHost_);
+    // zero target data location (not all values are overwritten upon unpacking)
+    std::memset(static_cast<void*>(spaceDomainBufferHost_.data()), 0,
+                sizeof(typename decltype(spaceDomainBufferHost_)::ValueType) *
+                    spaceDomainBufferHost_.size());
+  } else {
+    gpu::check_status(gpu::memset_async(
+        static_cast<void*>(spaceDomainBufferGPU_.data()), 0,
+        spaceDomainBufferGPU_.size() * sizeof(typename decltype(spaceDomainBufferGPU_)::ValueType),
+        spaceDomainStream_.get()));
+  }
 }
 
 template <typename T>
 auto TransposeMPIUnbufferedGPU<T>::unpack_backward() -> void {
-#ifndef SPFFT_GPU_DIRECT
-  copy_to_gpu_async(spaceDomainStream_, spaceDomainBufferHost_, spaceDomainBufferGPU_);
-#endif
+  if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
+    copy_to_gpu_async(spaceDomainStream_, spaceDomainBufferHost_, spaceDomainBufferGPU_);
 }
 
 template <typename T>
@@ -176,13 +181,13 @@ auto TransposeMPIUnbufferedGPU<T>::exchange_backward_start(const bool nonBlockin
 
   gpu::check_status(gpu::stream_synchronize(freqDomainStream_.get()));
 
-#ifdef SPFFT_GPU_DIRECT
-  auto sendBufferPtr = freqDomainBufferGPU_.data();
-  auto recvBufferPtr = spaceDomainBufferGPU_.data();
-#else
-  auto sendBufferPtr = freqDomainBufferHost_.data();
-  auto recvBufferPtr = spaceDomainBufferHost_.data();
-#endif
+  void* sendBufferPtr = freqDomainBufferHost_.data();
+  void* recvBufferPtr = spaceDomainBufferHost_.data();
+
+  if (exchBackend_ != SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST) {
+    sendBufferPtr = freqDomainBufferGPU_.data();
+    recvBufferPtr = spaceDomainBufferGPU_.data();
+  }
 
   if (nonBlockingExchange) {
     mpi_check_status(MPI_Ialltoallw(
@@ -208,13 +213,13 @@ auto TransposeMPIUnbufferedGPU<T>::exchange_forward_start(const bool nonBlocking
 
   gpu::check_status(gpu::stream_synchronize(spaceDomainStream_.get()));
 
-#ifdef SPFFT_GPU_DIRECT
-  auto sendBufferPtr = spaceDomainBufferGPU_.data();
-  auto recvBufferPtr = freqDomainBufferGPU_.data();
-#else
-  auto sendBufferPtr = spaceDomainBufferHost_.data();
-  auto recvBufferPtr = freqDomainBufferHost_.data();
-#endif
+  void* sendBufferPtr = spaceDomainBufferHost_.data();
+  void* recvBufferPtr = freqDomainBufferHost_.data();
+
+  if (exchBackend_ != SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST) {
+    sendBufferPtr = spaceDomainBufferGPU_.data();
+    recvBufferPtr = freqDomainBufferGPU_.data();
+  }
 
   if (nonBlockingExchange) {
     mpi_check_status(MPI_Ialltoallw(
@@ -236,16 +241,14 @@ auto TransposeMPIUnbufferedGPU<T>::exchange_forward_finalize() -> void {
 
 template <typename T>
 auto TransposeMPIUnbufferedGPU<T>::pack_forward() -> void {
-#ifndef SPFFT_GPU_DIRECT
-  copy_from_gpu_async(spaceDomainStream_, spaceDomainBufferGPU_, spaceDomainBufferHost_);
-#endif
+  if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
+    copy_from_gpu_async(spaceDomainStream_, spaceDomainBufferGPU_, spaceDomainBufferHost_);
 }
 
 template <typename T>
 auto TransposeMPIUnbufferedGPU<T>::unpack_forward() -> void {
-#ifndef SPFFT_GPU_DIRECT
-  copy_to_gpu_async(freqDomainStream_, freqDomainBufferHost_, freqDomainBufferGPU_);
-#endif
+  if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
+    copy_to_gpu_async(freqDomainStream_, freqDomainBufferHost_, freqDomainBufferGPU_);
 }
 
 // Instantiate class for float and double

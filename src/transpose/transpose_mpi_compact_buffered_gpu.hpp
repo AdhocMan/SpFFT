@@ -67,7 +67,7 @@ public:
   // spaceDomainBufferGPU and freqDomainDataGPU MAY overlap
   // freqDomainBufferGPU and spaceDomainDataGPU MAY overlap
   TransposeMPICompactBufferedGPU(const std::shared_ptr<Parameters>& param,
-                                 MPICommunicatorHandle comm,
+                                 SpfftExchangeBackend exchBackend, MPICommunicatorHandle comm,
                                  HostArrayView1D<ComplexType> spaceDomainBufferHost,
                                  GPUArrayView3D<ComplexGPUType> spaceDomainDataGPU,
                                  GPUArrayView1D<ComplexGPUType> spaceDomainBufferGPU,
@@ -87,8 +87,11 @@ public:
   auto exchange_forward_finalize() -> void override;
   auto unpack_forward() -> void override;
 
+  auto exchange_backend() -> SpfftExchangeBackend override { return exchBackend_; }
+
 private:
   std::shared_ptr<Parameters> param_;
+  SpfftExchangeBackend exchBackend_;
   MPIDatatypeHandle mpiTypeHandle_;
   MPICommunicatorHandle comm_;
   MPIRequestHandle mpiRequest_;

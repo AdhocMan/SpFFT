@@ -55,8 +55,8 @@ class TransposeMPIUnbufferedGPU : public Transpose {
 
 public:
   TransposeMPIUnbufferedGPU(
-      const std::shared_ptr<Parameters>& param, MPICommunicatorHandle comm,
-      HostArrayView3D<ComplexType> spaceDomainData,
+      const std::shared_ptr<Parameters>& param, SpfftExchangeBackend exchBackend,
+      MPICommunicatorHandle comm, HostArrayView3D<ComplexType> spaceDomainData,
       GPUArrayView3D<typename gpu::fft::ComplexType<ValueType>::type> spaceDomainDataGPU,
       GPUStreamHandle spaceDomainStream, HostArrayView2D<ComplexType> freqDomainData,
       GPUArrayView2D<typename gpu::fft::ComplexType<ValueType>::type> freqDomainDataGPU,
@@ -72,7 +72,10 @@ public:
   auto exchange_forward_finalize() -> void override;
   auto unpack_forward() -> void override;
 
+  auto exchange_backend() -> SpfftExchangeBackend override { return exchBackend_; }
+
 private:
+  SpfftExchangeBackend exchBackend_;
   MPICommunicatorHandle comm_;
   MPIRequestHandle mpiRequest_;
 

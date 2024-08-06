@@ -54,14 +54,15 @@
 namespace spfft {
 template <typename T, typename U>
 TransposeMPIBufferedGPU<T, U>::TransposeMPIBufferedGPU(
-    const std::shared_ptr<Parameters>& param, MPICommunicatorHandle comm,
-    HostArrayView1D<ComplexType> spaceDomainBufferHost,
+    const std::shared_ptr<Parameters>& param, SpfftExchangeBackend exchBackend,
+    MPICommunicatorHandle comm, HostArrayView1D<ComplexType> spaceDomainBufferHost,
     GPUArrayView3D<ComplexGPUType> spaceDomainDataGPU,
     GPUArrayView1D<ComplexGPUType> spaceDomainBufferGPU, GPUStreamHandle spaceDomainStream,
     HostArrayView1D<ComplexType> freqDomainBufferHost,
     GPUArrayView2D<ComplexGPUType> freqDomainDataGPU,
     GPUArrayView1D<ComplexGPUType> freqDomainBufferGPU, GPUStreamHandle freqDomainStream)
     : param_(param),
+      exchBackend_(exchBackend),
       comm_(std::move(comm)),
       spaceDomainBufferHost_(create_new_type_1d_view<ComplexExchangeType>(
           spaceDomainBufferHost,
@@ -98,8 +99,13 @@ TransposeMPIBufferedGPU<T, U>::TransposeMPIBufferedGPU(
   assert(disjoint(spaceDomainDataGPU, spaceDomainBufferGPU));
   assert(disjoint(freqDomainDataGPU, freqDomainBufferGPU));
   assert(disjoint(spaceDomainBufferHost, freqDomainBufferHost));
-#ifdef SPFFT_GPU_DIRECT
-  assert(disjoint(spaceDomainBufferGPU, freqDomainBufferGPU));
+  if (exchBackend_ != SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST) {
+    assert(disjoint(spaceDomainBufferGPU, freqDomainBufferGPU));
+  }
+
+  assert(exchBackend_ != SPFFT_EXCH_BACKEND_NCCL);
+#ifndef SPFFT_GPU_DIRECT
+  assert(exchBackend_ != SPFFT_EXCH_BACKEND_MPI_GPU);
 #endif
 
   // create underlying type
@@ -142,9 +148,8 @@ auto TransposeMPIBufferedGPU<T, U>::pack_backward() -> void {
                            create_1d_view(numXYPlanesGPU_, 0, numXYPlanesGPU_.size()),
                            create_1d_view(xyPlaneOffsetsGPU_, 0, xyPlaneOffsetsGPU_.size()),
                            freqDomainDataGPU_, freqDomainBufferGPU_);
-#ifndef SPFFT_GPU_DIRECT
-    copy_from_gpu_async(freqDomainStream_, freqDomainBufferGPU_, freqDomainBufferHost_);
-#endif
+    if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
+      copy_from_gpu_async(freqDomainStream_, freqDomainBufferGPU_, freqDomainBufferHost_);
   }
 }
 
@@ -156,9 +161,8 @@ auto TransposeMPIBufferedGPU<T, U>::unpack_backward() -> void {
         spaceDomainDataGPU_.size() * sizeof(typename decltype(spaceDomainDataGPU_)::ValueType),
         spaceDomainStream_.get()));
     if (spaceDomainBufferGPU_.size() > 0) {
-#ifndef SPFFT_GPU_DIRECT
-      copy_to_gpu_async(spaceDomainStream_, spaceDomainBufferHost_, spaceDomainBufferGPU_);
-#endif
+      if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
+        copy_to_gpu_async(spaceDomainStream_, spaceDomainBufferHost_, spaceDomainBufferGPU_);
       buffered_unpack_backward(spaceDomainStream_.get(), param_->max_num_xy_planes(),
                                create_1d_view(numZSticksGPU_, 0, numZSticksGPU_.size()),
                                create_1d_view(indicesGPU_, 0, indicesGPU_.size()),
@@ -174,13 +178,12 @@ auto TransposeMPIBufferedGPU<T, U>::exchange_backward_start(const bool nonBlocki
 
   gpu::check_status(gpu::stream_synchronize(freqDomainStream_.get()));
 
-#ifdef SPFFT_GPU_DIRECT
-  auto sendBufferPtr = freqDomainBufferGPU_.data();
-  auto recvBufferPtr = spaceDomainBufferGPU_.data();
-#else
-  auto sendBufferPtr = freqDomainBufferHost_.data();
-  auto recvBufferPtr = spaceDomainBufferHost_.data();
-#endif
+  void* sendBufferPtr = freqDomainBufferHost_.data();
+  void* recvBufferPtr = spaceDomainBufferHost_.data();
+  if (exchBackend_ != SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST) {
+    sendBufferPtr = freqDomainBufferGPU_.data();
+    recvBufferPtr = spaceDomainBufferGPU_.data();
+  }
 
   if (nonBlockingExchange) {
     // start non-blocking exchange
@@ -211,19 +214,16 @@ auto TransposeMPIBufferedGPU<T, U>::pack_forward() -> void {
                           create_1d_view(numZSticksGPU_, 0, numZSticksGPU_.size()),
                           create_1d_view(indicesGPU_, 0, indicesGPU_.size()), spaceDomainDataGPU_,
                           spaceDomainBufferGPU_);
-
-#ifndef SPFFT_GPU_DIRECT
-    copy_from_gpu_async(spaceDomainStream_, spaceDomainBufferGPU_, spaceDomainBufferHost_);
-#endif
+    if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
+      copy_from_gpu_async(spaceDomainStream_, spaceDomainBufferGPU_, spaceDomainBufferHost_);
   }
 }
 
 template <typename T, typename U>
 auto TransposeMPIBufferedGPU<T, U>::unpack_forward() -> void {
   if (freqDomainDataGPU_.size() > 0 && freqDomainBufferGPU_.size() > 0) {
-#ifndef SPFFT_GPU_DIRECT
-    copy_to_gpu_async(freqDomainStream_, freqDomainBufferHost_, freqDomainBufferGPU_);
-#endif
+    if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
+      copy_to_gpu_async(freqDomainStream_, freqDomainBufferHost_, freqDomainBufferGPU_);
     buffered_unpack_forward(freqDomainStream_.get(), param_->max_num_xy_planes(),
                             create_1d_view(numXYPlanesGPU_, 0, numXYPlanesGPU_.size()),
                             create_1d_view(xyPlaneOffsetsGPU_, 0, xyPlaneOffsetsGPU_.size()),
@@ -237,13 +237,12 @@ auto TransposeMPIBufferedGPU<T, U>::exchange_forward_start(const bool nonBlockin
 
   gpu::check_status(gpu::stream_synchronize(spaceDomainStream_.get()));
 
-#ifdef SPFFT_GPU_DIRECT
-  auto sendBufferPtr = spaceDomainBufferGPU_.data();
-  auto recvBufferPtr = freqDomainBufferGPU_.data();
-#else
-  auto sendBufferPtr = spaceDomainBufferHost_.data();
-  auto recvBufferPtr = freqDomainBufferHost_.data();
-#endif
+  void* sendBufferPtr = spaceDomainBufferHost_.data();
+  void* recvBufferPtr = freqDomainBufferHost_.data();
+  if (exchBackend_ != SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST) {
+    sendBufferPtr = spaceDomainBufferGPU_.data();
+    recvBufferPtr = freqDomainBufferGPU_.data();
+  }
 
   if (nonBlockingExchange) {
     // start non-blocking exchange

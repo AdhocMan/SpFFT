@@ -23,7 +23,34 @@
 
 using namespace spfft;
 
-class TransposeGPUTest : public ::testing::Test {
+static void check_space_domain(const HostArrayView3D<std::complex<double>>& realView,
+                               const HostArrayView3D<std::complex<double>>& fullView,
+                               const SizeType planeOffset, const SizeType numLocalXYPlanes) {
+  for (SizeType z = 0; z < numLocalXYPlanes; ++z) {
+    for (SizeType x = 0; x < fullView.dim_outer(); ++x) {
+      for (SizeType y = 0; y < fullView.dim_mid(); ++y) {
+        EXPECT_EQ(realView(z, y, x).real(), fullView(x, y, z + planeOffset).real());
+        EXPECT_EQ(realView(z, y, x).imag(), fullView(x, y, z + planeOffset).imag());
+      }
+    }
+  }
+}
+
+static void check_freq_domain(const HostArrayView2D<std::complex<double>>& freqView,
+                              const HostArrayView3D<std::complex<double>>& fullView,
+                              HostArrayConstView1D<int> xyIndices) {
+  for (SizeType stickIdx = 0; stickIdx < freqView.dim_outer(); ++stickIdx) {
+    const auto x = stickIdx / fullView.dim_outer();
+    const auto y = stickIdx - x * fullView.dim_outer();
+    for (SizeType z = 0; z < freqView.dim_inner(); ++z) {
+      EXPECT_EQ(freqView(stickIdx, z).real(), fullView(x, y, z).real());
+      EXPECT_EQ(freqView(stickIdx, z).imag(), fullView(x, y, z).imag());
+    }
+  }
+}
+
+class TransposeGPUTest
+    : public ::testing::TestWithParam<std::tuple<SpfftExchangeType, SpfftExchangeBackend>> {
 protected:
   void SetUp() override {
     comm_ = MPICommunicatorHandle(MPI_COMM_WORLD);
@@ -97,6 +124,73 @@ protected:
     }
   }
 
+  void run_test() {
+    const auto exchType = std::get<0>(GetParam());
+    const auto exchBackend = std::get<1>(GetParam());
+
+    if(exchBackend == SPFFT_EXCH_BACKEND_NCCL) {
+      if (!comm_.init_nccl()) GTEST_SKIP();
+    }
+
+    auto freqXYView = create_3d_view(array2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
+                                     paramPtr_->dim_y(), paramPtr_->dim_x());
+    auto freqXYViewGPU = create_3d_view(gpuArray2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
+                                        paramPtr_->dim_y(), paramPtr_->dim_x());
+    auto freqView =
+        create_2d_view(array1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
+    auto freqViewGPU =
+        create_2d_view(gpuArray1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
+
+    auto fullView =
+        create_3d_view(fullArray_, 0, paramPtr_->dim_x(), paramPtr_->dim_y(), paramPtr_->dim_z());
+
+    GPUStreamHandle stream(false);
+    auto transposeBufferZ = create_1d_view(
+        array2_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
+    auto transposeBufferZGPU = create_1d_view(
+        gpuArray2_, 0,
+        comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
+    auto transposeBufferXY = create_1d_view(
+        array1_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
+    auto transposeBufferXYGPU = create_1d_view(
+        gpuArray1_, 0,
+        comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
+
+    std::unique_ptr<Transpose> transpose;
+
+    switch (exchType) {
+      case SPFFT_EXCH_COMPACT_BUFFERED:
+        transpose.reset(new TransposeMPICompactBufferedGPU<double, double>(
+            paramPtr_, exchBackend, comm_, transposeBufferXY, freqXYViewGPU, transposeBufferXYGPU,
+            stream, transposeBufferZ, freqViewGPU, transposeBufferZGPU, stream));
+        break;
+      case SPFFT_EXCH_BUFFERED:
+        transpose.reset(new TransposeMPIBufferedGPU<double, double>(
+            paramPtr_, exchBackend, comm_, transposeBufferXY, freqXYViewGPU, transposeBufferXYGPU,
+            stream, transposeBufferZ, freqViewGPU, transposeBufferZGPU, stream));
+        break;
+      case SPFFT_EXCH_UNBUFFERED:
+        transpose.reset(new TransposeMPIUnbufferedGPU<double>(paramPtr_, exchBackend, comm_,
+                                                              freqXYView, freqXYViewGPU, stream,
+                                                              freqView, freqViewGPU, stream));
+        break;
+      default:
+        ASSERT_TRUE(false);
+    }
+
+    copy_to_gpu_async(stream, freqView, freqViewGPU);
+    transpose->backward();
+    copy_from_gpu_async(stream, freqXYViewGPU, freqXYView);
+    gpu::check_status(gpu::stream_synchronize(stream.get()));
+    check_space_domain(freqXYView, fullView, paramPtr_->xy_plane_offset(comm_.rank()),
+                       paramPtr_->num_xy_planes(comm_.rank()));
+
+    transpose->forward();
+    copy_from_gpu_async(stream, freqViewGPU, freqView);
+    gpu::check_status(gpu::stream_synchronize(stream.get()));
+    check_freq_domain(freqView, fullView, paramPtr_->z_stick_xy_indices(comm_.rank()));
+  }
+
   MPICommunicatorHandle comm_;
   std::shared_ptr<Parameters> paramPtr_;
   HostArray<std::complex<double>> array1_;
@@ -106,145 +200,73 @@ protected:
   GPUArray<typename gpu::fft::ComplexType<double>::type> gpuArray2_;
 };
 
-static void check_space_domain(const HostArrayView3D<std::complex<double>>& realView,
-                               const HostArrayView3D<std::complex<double>>& fullView,
-                               const SizeType planeOffset, const SizeType numLocalXYPlanes) {
-  for (SizeType z = 0; z < numLocalXYPlanes; ++z) {
-    for (SizeType x = 0; x < fullView.dim_outer(); ++x) {
-      for (SizeType y = 0; y < fullView.dim_mid(); ++y) {
-        EXPECT_EQ(realView(z, y, x).real(), fullView(x, y, z + planeOffset).real());
-        EXPECT_EQ(realView(z, y, x).imag(), fullView(x, y, z + planeOffset).imag());
-      }
-    }
+TEST_P(TransposeGPUTest, Full) {
+  GTEST_MPI_GUARD
+  try {
+    this->run_test();
+  } catch (const std::exception& e) {
+    std::cout << "ERROR: Rank " << comm_.rank() << ", " << e.what() << std::endl;
+    ASSERT_TRUE(false);
   }
 }
 
-static void check_freq_domain(const HostArrayView2D<std::complex<double>>& freqView,
-                              const HostArrayView3D<std::complex<double>>& fullView,
-                              HostArrayConstView1D<int> xyIndices) {
-  for (SizeType stickIdx = 0; stickIdx < freqView.dim_outer(); ++stickIdx) {
-    const auto x = stickIdx / fullView.dim_outer();
-    const auto y = stickIdx - x * fullView.dim_outer();
-    for (SizeType z = 0; z < freqView.dim_inner(); ++z) {
-      EXPECT_EQ(freqView(stickIdx, z).real(), fullView(x, y, z).real());
-      EXPECT_EQ(freqView(stickIdx, z).imag(), fullView(x, y, z).imag());
-    }
+// Show exchange name instead of enum value for test output
+static auto param_type_names(
+    const ::testing::TestParamInfo<
+        std::tuple<SpfftExchangeType, SpfftExchangeBackend>>& info)
+    -> std::string {
+  const auto exchType = std::get<0>(info.param);
+  const auto exchBackend = std::get<1>(info.param);
+  std::string name;
+  switch (exchType) {
+    case SpfftExchangeType::SPFFT_EXCH_BUFFERED: {
+      name += "Buffered";
+    } break;
+    case SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED: {
+      name += "CompactBuffered";
+    } break;
+    case SpfftExchangeType::SPFFT_EXCH_UNBUFFERED: {
+      name += "Unbuffered";
+    } break;
+    default:
+      name += "Default";
   }
+
+  switch (exchBackend) {
+    case SPFFT_EXCH_BACKEND_MPI_HOST: {
+      name += "MPIHost";
+    } break;
+    case SPFFT_EXCH_BACKEND_MPI_GPU: {
+      name += "MPIGPU";
+    } break;
+    case SPFFT_EXCH_BACKEND_NCCL: {
+      name += "NCCL";
+    } break;
+  }
+
+  return name;
 }
 
-TEST_F(TransposeGPUTest, Buffered) {
-  GTEST_MPI_GUARD
-  auto freqXYView = create_3d_view(array2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
-                                   paramPtr_->dim_y(), paramPtr_->dim_x());
-  auto freqXYViewGPU = create_3d_view(gpuArray2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
-                                      paramPtr_->dim_y(), paramPtr_->dim_x());
-  auto freqView =
-      create_2d_view(array1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
-  auto freqViewGPU =
-      create_2d_view(gpuArray1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
+// instantiate tests with parameters
+INSTANTIATE_TEST_SUITE_P(
+    MPI, TransposeGPUTest,
+    ::testing::Combine(::testing::Values(SpfftExchangeType::SPFFT_EXCH_BUFFERED,
+                                         SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED,
+                                         SpfftExchangeType::SPFFT_EXCH_UNBUFFERED),
+                       ::testing::Values(SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST
+#if defined(SPFFT_GPU_DIRECT)
+                                         ,
+                                         SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_GPU
+#endif
+                                         )),
+    param_type_names);
 
-  auto fullView =
-      create_3d_view(fullArray_, 0, paramPtr_->dim_x(), paramPtr_->dim_y(), paramPtr_->dim_z());
+#if defined(SPFFT_NCCL)
+INSTANTIATE_TEST_SUITE_P(
+    NCCL, TransposeGPUTest,
+    ::testing::Combine(::testing::Values(SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED),
+                       ::testing::Values(SpfftExchangeBackend::SPFFT_EXCH_BACKEND_NCCL)),
+    param_type_names);
+#endif
 
-  GPUStreamHandle stream(false);
-  auto transposeBufferZ = create_1d_view(
-      array2_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-  auto transposeBufferZGPU = create_1d_view(
-      gpuArray2_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-  auto transposeBufferXY = create_1d_view(
-      array1_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-  auto transposeBufferXYGPU = create_1d_view(
-      gpuArray1_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-
-  TransposeMPIBufferedGPU<double, double> transpose(
-      paramPtr_, comm_, transposeBufferXY, freqXYViewGPU, transposeBufferXYGPU, stream,
-      transposeBufferZ, freqViewGPU, transposeBufferZGPU, stream);
-
-  copy_to_gpu_async(stream, freqView, freqViewGPU);
-  transpose.backward();
-  copy_from_gpu_async(stream, freqXYViewGPU, freqXYView);
-  gpu::check_status(gpu::stream_synchronize(stream.get()));
-  check_space_domain(freqXYView, fullView, paramPtr_->xy_plane_offset(comm_.rank()),
-                     paramPtr_->num_xy_planes(comm_.rank()));
-
-  transpose.forward();
-  copy_from_gpu_async(stream, freqViewGPU, freqView);
-  gpu::check_status(gpu::stream_synchronize(stream.get()));
-  check_freq_domain(freqView, fullView, paramPtr_->z_stick_xy_indices(comm_.rank()));
-}
-
-TEST_F(TransposeGPUTest, CompactBuffered) {
-  GTEST_MPI_GUARD
-  auto freqXYView = create_3d_view(array2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
-                                   paramPtr_->dim_y(), paramPtr_->dim_x());
-  auto freqXYViewGPU = create_3d_view(gpuArray2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
-                                      paramPtr_->dim_y(), paramPtr_->dim_x());
-  auto freqView =
-      create_2d_view(array1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
-  auto freqViewGPU =
-      create_2d_view(gpuArray1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
-
-  auto fullView =
-      create_3d_view(fullArray_, 0, paramPtr_->dim_x(), paramPtr_->dim_y(), paramPtr_->dim_z());
-
-  GPUStreamHandle stream(false);
-  auto transposeBufferZ = create_1d_view(
-      array2_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-  auto transposeBufferZGPU = create_1d_view(
-      gpuArray2_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-  auto transposeBufferXY = create_1d_view(
-      array1_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-  auto transposeBufferXYGPU = create_1d_view(
-      gpuArray1_, 0, comm_.size() * paramPtr_->max_num_xy_planes() * paramPtr_->max_num_z_sticks());
-
-  TransposeMPICompactBufferedGPU<double, double> transpose(
-      paramPtr_, comm_, transposeBufferXY, freqXYViewGPU, transposeBufferXYGPU, stream,
-      transposeBufferZ, freqViewGPU, transposeBufferZGPU, stream);
-
-  copy_to_gpu_async(stream, freqView, freqViewGPU);
-  transpose.pack_backward();
-  transpose.backward();
-  transpose.unpack_backward();
-  copy_from_gpu_async(stream, freqXYViewGPU, freqXYView);
-  gpu::check_status(gpu::stream_synchronize(stream.get()));
-  check_space_domain(freqXYView, fullView, paramPtr_->xy_plane_offset(comm_.rank()),
-                     paramPtr_->num_xy_planes(comm_.rank()));
-
-  transpose.forward();
-  copy_from_gpu_async(stream, freqViewGPU, freqView);
-  gpu::check_status(gpu::stream_synchronize(stream.get()));
-  check_freq_domain(freqView, fullView, paramPtr_->z_stick_xy_indices(comm_.rank()));
-}
-
-TEST_F(TransposeGPUTest, Unbuffered) {
-  GTEST_MPI_GUARD
-  auto freqXYView = create_3d_view(array2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
-                                   paramPtr_->dim_y(), paramPtr_->dim_x());
-  auto freqXYViewGPU = create_3d_view(gpuArray2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
-                                      paramPtr_->dim_y(), paramPtr_->dim_x());
-  auto freqView =
-      create_2d_view(array1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
-  auto freqViewGPU =
-      create_2d_view(gpuArray1_, 0, paramPtr_->num_z_sticks(comm_.rank()), paramPtr_->dim_z());
-
-  auto fullView =
-      create_3d_view(fullArray_, 0, paramPtr_->dim_x(), paramPtr_->dim_y(), paramPtr_->dim_z());
-
-  GPUStreamHandle stream(false);
-
-  TransposeMPIUnbufferedGPU<double> transpose(paramPtr_, comm_, freqXYView, freqXYViewGPU, stream,
-                                              freqView, freqViewGPU, stream);
-
-  copy_to_gpu_async(stream, freqView, freqViewGPU);
-  transpose.backward();
-  copy_from_gpu_async(stream, freqXYViewGPU, freqXYView);
-  gpu::check_status(gpu::stream_synchronize(stream.get()));
-  check_space_domain(freqXYView, fullView, paramPtr_->xy_plane_offset(comm_.rank()),
-                     paramPtr_->num_xy_planes(comm_.rank()));
-
-  transpose.forward();
-  copy_from_gpu_async(stream, freqViewGPU, freqView);
-  gpu::check_status(gpu::stream_synchronize(stream.get()));
-  check_freq_domain(freqView, fullView, paramPtr_->z_stick_xy_indices(comm_.rank()));
-}
 #endif

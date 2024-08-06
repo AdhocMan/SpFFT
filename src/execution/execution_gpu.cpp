@@ -37,9 +37,14 @@
 #include "symmetry/symmetry_gpu.hpp"
 #include "timing/timing.hpp"
 #include "transpose/transpose_gpu.hpp"
+
+#ifdef SPFFT_MPI
 #include "transpose/transpose_mpi_buffered_gpu.hpp"
 #include "transpose/transpose_mpi_compact_buffered_gpu.hpp"
 #include "transpose/transpose_mpi_unbuffered_gpu.hpp"
+#include "mpi_util/system_topology.hpp"
+#endif
+
 
 namespace spfft {
 
@@ -116,9 +121,9 @@ ExecutionGPU<T>::ExecutionGPU(const int numThreads, std::shared_ptr<Parameters> 
 
 #ifdef SPFFT_MPI
 template <typename T>
-ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SpfftExchangeType exchangeType,
-                              const int numThreads, std::shared_ptr<Parameters> param,
-                              HostArray<std::complex<T>>& array1,
+ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SystemTopology& stopo,
+                              const SpfftExchangeType exchangeType, const int numThreads,
+                              std::shared_ptr<Parameters> param, HostArray<std::complex<T>>& array1,
                               HostArray<std::complex<T>>& array2,
                               GPUArray<typename gpu::fft::ComplexType<T>::type>& gpuArray1,
                               GPUArray<typename gpu::fft::ComplexType<T>::type>& gpuArray2,
@@ -191,14 +196,28 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SpfftExchangeTyp
     }
   }
 
+  auto exchBackend = SPFFT_EXCH_BACKEND_MPI_HOST;
+#ifdef SPFFT_GPU_DIRECT
+  exchBackend = SPFFT_EXCH_BACKEND_MPI_GPU;
+#endif
+#ifdef SPFFT_NCCL
+  // NCCL only works with compact buffered exchange and requires one MPI rank per GPU.
+  // Performance appears to be worse than MPI with GPU_DIRECT when network is involved.
+  if ((exchangeType == SPFFT_EXCH_COMPACT_BUFFERED ||
+       exchangeType == SPFFT_EXCH_COMPACT_BUFFERED_FLOAT) &&
+      (stopo.numNodes == 1 || exchBackend == SPFFT_EXCH_BACKEND_MPI_HOST) &&
+      stopo.numDevices == comm.size())
+    if (comm.init_nccl()) exchBackend = SPFFT_EXCH_BACKEND_NCCL;
+#endif
+
   switch (exchangeType) {
     case SpfftExchangeType::SPFFT_EXCH_UNBUFFERED: {
       auto freqDomainDataHost = create_2d_view(array1, 0, numLocalZSticks, param->dim_z());
       auto freqDomainXYHost =
           create_3d_view(array2, 0, numLocalXYPlanes, param->dim_y(), param->dim_x_freq());
-      transpose_.reset(
-          new TransposeMPIUnbufferedGPU<T>(param, comm, freqDomainXYHost, freqDomainXYGPU_, stream_,
-                                           freqDomainDataHost, freqDomainDataGPU_, stream_));
+      transpose_.reset(new TransposeMPIUnbufferedGPU<T>(
+          param, exchBackend, comm, freqDomainXYHost, freqDomainXYGPU_, stream_, freqDomainDataHost,
+          freqDomainDataGPU_, stream_));
     } break;
     case SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED: {
       const auto bufferZSize = param->total_num_xy_planes() * param->num_z_sticks(comm.rank());
@@ -208,8 +227,8 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SpfftExchangeTyp
       auto transposeBufferXY = create_1d_view(array1, 0, bufferXYSize);
       auto transposeBufferXYGPU = create_1d_view(gpuArray1, 0, bufferXYSize);
       transpose_.reset(new TransposeMPICompactBufferedGPU<T, T>(
-          param, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU, stream_,
-          transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
+          param, exchBackend, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU,
+          stream_, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
     } break;
     case SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT: {
       const auto bufferZSize = param->total_num_xy_planes() * param->num_z_sticks(comm.rank());
@@ -219,8 +238,8 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SpfftExchangeTyp
       auto transposeBufferXY = create_1d_view(array1, 0, bufferXYSize);
       auto transposeBufferXYGPU = create_1d_view(gpuArray1, 0, bufferXYSize);
       transpose_.reset(new TransposeMPICompactBufferedGPU<T, float>(
-          param, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU, stream_,
-          transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
+          param, exchBackend, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU,
+          stream_, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
     } break;
     case SpfftExchangeType::SPFFT_EXCH_BUFFERED: {
       const auto bufferSize = param->max_num_z_sticks() * param->max_num_xy_planes() * comm.size();
@@ -229,8 +248,8 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SpfftExchangeTyp
       auto transposeBufferXY = create_1d_view(array1, 0, bufferSize);
       auto transposeBufferXYGPU = create_1d_view(gpuArray1, 0, bufferSize);
       transpose_.reset(new TransposeMPIBufferedGPU<T, T>(
-          param, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU, stream_,
-          transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
+          param, exchBackend, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU,
+          stream_, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
     } break;
     case SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT: {
       const auto bufferSize = param->max_num_z_sticks() * param->max_num_xy_planes() * comm.size();
@@ -239,8 +258,8 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SpfftExchangeTyp
       auto transposeBufferXY = create_1d_view(array1, 0, bufferSize);
       auto transposeBufferXYGPU = create_1d_view(gpuArray1, 0, bufferSize);
       transpose_.reset(new TransposeMPIBufferedGPU<T, float>(
-          param, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU, stream_,
-          transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
+          param, exchBackend, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU,
+          stream_, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
     } break;
     default:
       throw InvalidParameterError();

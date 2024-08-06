@@ -116,6 +116,21 @@ enum SpfftExecType {
   SPFFT_EXEC_ASYNCHRONOUS
 };
 
+enum SpfftExchangeBackend {
+  /**
+   * Exchange using MPI with host memory
+   */
+  SPFFT_EXCH_BACKEND_MPI_HOST,
+  /**
+   * Exchange using MPI with GPU memory
+   */
+  SPFFT_EXCH_BACKEND_MPI_GPU,
+  /**
+   * Exchange using NCCL with GPU memory
+   */
+  SPFFT_EXCH_BACKEND_NCCL
+};
+
 #ifndef __cplusplus
 /*! \cond PRIVATE */
 // C only
@@ -125,6 +140,7 @@ typedef enum SpfftTransformType SpfftTransformType;
 typedef enum SpfftIndexFormatType SpfftIndexFormatType;
 typedef enum SpfftScalingType SpfftScalingType;
 typedef enum SpfftExecType SpfftExecType;
+typedef enum SpfftExchangeBackend SpfftExchangeBackend;
 /*! \endcond */
 #endif  // cpp
 #endif

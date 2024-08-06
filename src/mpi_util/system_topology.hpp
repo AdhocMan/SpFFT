@@ -25,44 +25,31 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef SPFFT_TRANSPOSE_HPP
-#define SPFFT_TRANSPOSE_HPP
+#ifndef SPFFT_SYSTEM_TOPOLOGY_HPP
+#define SPFFT_SYSTEM_TOPOLOGY_HPP
 
 #include "spfft/config.h"
+
+#ifdef SPFFT_MPI
+
+#include <mpi.h>
+
+#include <memory>
+#include <tuple>
+
+#include "spfft/exceptions.hpp"
 #include "spfft/types.h"
 #include "util/common_types.hpp"
 
 namespace spfft {
+struct SystemTopology {
+  SystemTopology() = default;
 
-class Transpose {
-public:
-  virtual auto pack_forward() -> void {}
-  virtual auto exchange_forward_start(const bool nonBlockingExchange) -> void = 0;
-  virtual auto exchange_forward_finalize() -> void {}
-  virtual auto unpack_forward() -> void {}
+  SystemTopology(const MPI_Comm& comm, SpfftProcessingUnitType pu);
 
-  inline auto forward() -> void {
-    this->pack_forward();
-    this->exchange_forward_start(false);
-    this->exchange_forward_finalize();
-    this->unpack_forward();
-  }
-
-  virtual auto pack_backward() -> void {}
-  virtual auto exchange_backward_start(const bool nonBlockingExchange) -> void = 0;
-  virtual auto exchange_backward_finalize() -> void {}
-  virtual auto unpack_backward() -> void {}
-
-  inline auto backward() -> void {
-    this->pack_backward();
-    this->exchange_backward_start(false);
-    this->exchange_backward_finalize();
-    this->unpack_backward();
-  }
-
-  virtual auto exchange_backend() -> SpfftExchangeBackend { return SPFFT_EXCH_BACKEND_MPI_HOST; }
-
-  virtual ~Transpose() = default;
+  SizeType numNodes = 1, numDevices = 0;
 };
 }  // namespace spfft
+
+#endif
 #endif

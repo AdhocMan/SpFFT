@@ -41,6 +41,7 @@
 #ifdef SPFFT_MPI
 #include <mpi.h>
 #include "mpi_util/mpi_communicator_handle.hpp"
+#include "mpi_util/system_topology.hpp"
 #endif
 
 #if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
@@ -118,6 +119,8 @@ public:
   inline auto communicator() const -> const MPICommunicatorHandle& { return comm_; }
 
   inline auto exchange_type() const -> SpfftExchangeType { return exchangeType_; }
+
+  inline auto system_topology() const -> const SystemTopology& { return stopo_; }
 #endif
 
 private:
@@ -138,6 +141,7 @@ private:
 #ifdef SPFFT_MPI
   MPICommunicatorHandle comm_;
   SpfftExchangeType exchangeType_;
+  SystemTopology stopo_;
 #endif
 };
 

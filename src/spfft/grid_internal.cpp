@@ -118,7 +118,8 @@ GridInternal<T>::GridInternal(int maxDimX, int maxDimY, int maxDimZ, int maxNumL
       maxNumLocalZSticks_(maxNumLocalZSticks),
       maxNumLocalXYPlanes_(maxNumLocalXYPlanes),
       comm_(comm),
-      exchangeType_(exchangeType) {
+      exchangeType_(exchangeType),
+      stopo_(comm_.get(), executionUnit_) {
   // input check
   if (static_cast<long long int>(maxDimX) * static_cast<long long int>(maxDimY) *
           static_cast<long long int>(maxNumLocalXYPlanes) >
