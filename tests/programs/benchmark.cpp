@@ -39,9 +39,16 @@
 
 using namespace spfft;
 
-void run_benchmark(const MPICommunicatorHandle& comm, const SpfftTransformType transformType,
-                   const int dimX, const int dimY, const int dimZ, const int numLocalZSticks,
-                   const int numLocalXYPlanes, const SpfftProcessingUnitType executionUnit,
+struct MPICommunicatorHandleWrapper {
+#ifdef SPFFT_MPI
+  const MPICommunicatorHandle& comm;
+#endif
+};
+
+void run_benchmark(const MPICommunicatorHandleWrapper& commWrapper,
+                   const SpfftTransformType transformType, const int dimX, const int dimY,
+                   const int dimZ, const int numLocalZSticks, const int numLocalXYPlanes,
+                   const SpfftProcessingUnitType executionUnit,
                    const SpfftProcessingUnitType targetUnit, const int numThreads,
                    const SpfftExchangeType exchangeType, const std::vector<int>& indices,
                    const int numRepeats, const int numTransforms, double** freqValuesPTR) {
@@ -60,7 +67,7 @@ void run_benchmark(const MPICommunicatorHandle& comm, const SpfftTransformType t
   for (int t = 0; t < numTransforms; ++t) {
 #ifdef SPFFT_MPI
     Grid grid(dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit, numThreads,
-              comm.get(), exchangeType);
+              commWrapper.comm.get(), exchangeType);
 #else
     Grid grid(dimX, dimY, dimZ, numLocalZSticks, executionUnit, numThreads);
 #endif
@@ -86,8 +93,10 @@ void run_benchmark(const MPICommunicatorHandle& comm, const SpfftTransformType t
       exchBackendName = "Local";
       break;
   }
-  if (comm.rank() == 0)
+#ifdef SPFFT_MPI
+  if (commWrapper.comm.rank() == 0)
     std::cout << "Backend for " << exchName << ": " << exchBackendName << std::endl;
+#endif
 
   std::vector<SpfftProcessingUnitType> targetUnits(numTransforms, targetUnit);
   std::vector<SpfftScalingType> scalingTypes(numTransforms, SPFFT_NO_SCALING);
@@ -123,9 +132,11 @@ int main(int argc, char** argv) {
   MPICommunicatorHandle comm(MPI_COMM_WORLD);
   const SizeType commRank = comm.rank();
   const SizeType commSize = comm.size();
+  MPICommunicatorHandleWrapper commWrapper{comm};
 #else
   const SizeType commRank = 0;
   const SizeType commSize = 1;
+  MPICommunicatorHandleWrapper commWrapper{};
 #endif
 
 #if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
@@ -267,14 +278,14 @@ int main(int argc, char** argv) {
   }
 
   if (exchName == "all") {
-    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+    run_benchmark(commWrapper, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
                   executionUnit, targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_BUFFERED,
                   xyzIndices, numRepeats, numTransforms, freqValuesPointers.data());
-    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+    run_benchmark(commWrapper, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
                   executionUnit, targetUnit, numThreads,
                   SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED, xyzIndices, numRepeats,
                   numTransforms, freqValuesPointers.data());
-    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+    run_benchmark(commWrapper, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
                   executionUnit, targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_UNBUFFERED,
                   xyzIndices, numRepeats, numTransforms, freqValuesPointers.data());
   } else {
@@ -291,7 +302,7 @@ int main(int argc, char** argv) {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_UNBUFFERED;
     }
 
-    run_benchmark(comm, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
+    run_benchmark(commWrapper, transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes,
                   executionUnit, targetUnit, numThreads, exchangeType, xyzIndices, numRepeats,
                   numTransforms, freqValuesPointers.data());
   }
