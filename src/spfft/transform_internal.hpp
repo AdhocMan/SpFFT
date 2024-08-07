@@ -133,7 +133,9 @@ public:
   auto space_domain_data(SpfftProcessingUnitType location) -> T*;
 
   auto exchange_backend() const -> SpfftExchangeBackend {
+#if (defined(SPFFT_CUDA) || defined(SPFFT_ROCM))
     if(execGPU_) return execGPU_->exchange_backend();
+#endif
     return execHost_->exchange_backend();
   }
 

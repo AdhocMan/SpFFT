@@ -129,7 +129,11 @@ protected:
     const auto exchBackend = std::get<1>(GetParam());
 
     if(exchBackend == SPFFT_EXCH_BACKEND_NCCL) {
+#ifdef SPFFT_NCCL
       if (!comm_.init_nccl()) GTEST_SKIP();
+#else
+      GTEST_SKIP();
+#endif
     }
 
     auto freqXYView = create_3d_view(array2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
