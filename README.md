@@ -65,6 +65,7 @@ make -j8 install
 | SPFFT_OMP              | ON      | Enable multi-threading with OpenMP                           |
 | SPFFT_GPU_BACKEND      | OFF     | Select GPU backend. Can be OFF, CUDA or ROCM                 |
 | SPFFT_GPU_DIRECT       | OFF     | Use GPU aware MPI with GPUDirect                             |
+| SPFFT_NCCL             | OFF     | Use NCCL for GPU-GPU communication. Requires MPI.            |
 | SPFFT_SINGLE_PRECISION | OFF     | Enable single precision support                              |
 | SPFFT_STATIC           | OFF     | Build as static library                                      |
 | SPFFT_FFTW_LIB         | AUTO    | Library providing a FFTW interface. Can be AUTO, MKL or FFTW |
@@ -74,6 +75,27 @@ make -j8 install
 | SPFFT_BUNDLED_LIBS     | ON      | Download required libraries for building tests               |
 
 **_NOTE:_**  When compiling with CUDA or ROCM (HIP), the standard `CMAKE_CUDA_ARCHITECTURES` and `CMAKE_HIP_ARCHITECTURES` options should be defined as well. `HIP_HCC_FLAGS` is no longer in use.
+
+## Communication
+
+SpFFT uses MPI and optionally the Nvidia NCCL library for communication. It also provides different ways to pack / unpack data for communication:
+
+| Exchange Type                      | MPI Function         | NCCL                  |  Data Type                            |
+|------------------------------------|---------|------------|-----------------------|---------------------------------------|
+| SPFFT_EXCH_BUFFERED                | MPI_Alltoall         |                       |  float / double                       |
+| SPFFT_EXCH_BUFFERED_FLOAT          | MPI_Alltoall         |                       |  float (with conversion if required)  |
+| SPFFT_EXCH_COMPACT_BUFFERED        | MPI_Alltoallv        |  ncclSend / ncclRecv  |  float / double                       |
+| SPFFT_EXCH_COMPACT_BUFFERED_FLOAT  | MPI_Alltoallv        |  ncclSend / ncclRecv  |  float (with conversion if required)  |
+| SPFFT_EXCH_UNBUFFERED              | MPI_Alltoallw        |                       |  float / double                       |
+
+
+The option `SPFFT_EXCH_DEFAULT` is equivalent to `SPFFT_EXCH_COMPACT_BUFFERED`, which usually provides the best performance if type conversion for communication is not desired.
+
+### NCCL
+
+
+
+
 
 ## Examples
 Further exmples for C++, C and Fortran can be found in the "examples" folder.
