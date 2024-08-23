@@ -165,8 +165,8 @@ protected:
     switch (exchType) {
       case SPFFT_EXCH_COMPACT_BUFFERED:
         transpose.reset(new TransposeMPICompactBufferedGPU<double, double>(
-            paramPtr_, exchBackend, comm_, transposeBufferXY, freqXYViewGPU, transposeBufferXYGPU,
-            stream, transposeBufferZ, freqViewGPU, transposeBufferZGPU, stream));
+            paramPtr_, exchBackend, comm_, stream, transposeBufferXY, freqXYViewGPU,
+            transposeBufferXYGPU, transposeBufferZ, freqViewGPU, transposeBufferZGPU));
         break;
       case SPFFT_EXCH_BUFFERED:
         transpose.reset(new TransposeMPIBufferedGPU<double, double>(

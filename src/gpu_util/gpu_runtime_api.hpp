@@ -51,6 +51,8 @@ namespace gpu {
 using StatusType = GPU_PREFIX(Error_t);
 using StreamType = GPU_PREFIX(Stream_t);
 using EventType = GPU_PREFIX(Event_t);
+using IpcMemHandle = GPU_PREFIX(IpcMemHandle_t);
+using IpcEventHandle = GPU_PREFIX(IpcEventHandle_t);
 
 #ifdef SPFFT_CUDA
 using PointerAttributes = GPU_PREFIX(PointerAttributes);
@@ -105,6 +107,8 @@ constexpr auto EventDefault = GPU_PREFIX(EventDefault);
 constexpr auto EventBlockingSync = GPU_PREFIX(EventBlockingSync);
 constexpr auto EventDisableTiming = GPU_PREFIX(EventDisableTiming);
 constexpr auto EventInterprocess = GPU_PREFIX(EventInterprocess);
+
+constexpr auto IpcMemLazyEnablePeerAccess = GPU_PREFIX(IpcMemLazyEnablePeerAccess);
 }  // namespace flag
 
 // ==================================
@@ -228,6 +232,31 @@ inline auto pointer_get_attributes(ARGS&&... args) -> StatusType {
 template <typename... ARGS>
 inline auto device_get_pcibusid(ARGS&&... args) -> StatusType {
   return GPU_PREFIX(DeviceGetPCIBusId)(std::forward<ARGS>(args)...);
+}
+
+template <typename... ARGS>
+inline auto ipc_get_event_handle(ARGS&&... args) -> StatusType {
+  return GPU_PREFIX(IpcGetEventHandle)(std::forward<ARGS>(args)...);
+}
+
+template <typename... ARGS>
+inline auto ipc_open_event_handle(ARGS&&... args) -> StatusType {
+  return GPU_PREFIX(IpcOpenEventHandle)(std::forward<ARGS>(args)...);
+}
+
+template <typename... ARGS>
+inline auto ipc_open_mem_handle(ARGS&&... args) -> StatusType {
+  return GPU_PREFIX(IpcOpenMemHandle)(std::forward<ARGS>(args)...);
+}
+
+template <typename... ARGS>
+inline auto ipc_get_mem_handle(ARGS&&... args) -> StatusType {
+  return GPU_PREFIX(IpcGetMemHandle)(std::forward<ARGS>(args)...);
+}
+
+template <typename... ARGS>
+inline auto ipc_close_mem_handle(ARGS&&... args) -> StatusType {
+  return GPU_PREFIX(IpcCloseMemHandle)(std::forward<ARGS>(args)...);
 }
 
 inline auto get_last_error() -> StatusType { return GPU_PREFIX(GetLastError)(); }

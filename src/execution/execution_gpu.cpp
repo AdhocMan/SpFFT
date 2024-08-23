@@ -227,8 +227,8 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SystemTopology& 
       auto transposeBufferXY = create_1d_view(array1, 0, bufferXYSize);
       auto transposeBufferXYGPU = create_1d_view(gpuArray1, 0, bufferXYSize);
       transpose_.reset(new TransposeMPICompactBufferedGPU<T, T>(
-          param, exchBackend, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU,
-          stream_, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
+          param, exchBackend, comm, stream_, transposeBufferXY, freqDomainXYGPU_,
+          transposeBufferXYGPU, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU));
     } break;
     case SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT: {
       const auto bufferZSize = param->total_num_xy_planes() * param->num_z_sticks(comm.rank());
@@ -238,8 +238,8 @@ ExecutionGPU<T>::ExecutionGPU(MPICommunicatorHandle comm, const SystemTopology& 
       auto transposeBufferXY = create_1d_view(array1, 0, bufferXYSize);
       auto transposeBufferXYGPU = create_1d_view(gpuArray1, 0, bufferXYSize);
       transpose_.reset(new TransposeMPICompactBufferedGPU<T, float>(
-          param, exchBackend, comm, transposeBufferXY, freqDomainXYGPU_, transposeBufferXYGPU,
-          stream_, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU, stream_));
+          param, exchBackend, comm, stream_, transposeBufferXY, freqDomainXYGPU_,
+          transposeBufferXYGPU, transposeBufferZ, freqDomainDataGPU_, transposeBufferZGPU));
     } break;
     case SpfftExchangeType::SPFFT_EXCH_BUFFERED: {
       const auto bufferSize = param->max_num_z_sticks() * param->max_num_xy_planes() * comm.size();

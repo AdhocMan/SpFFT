@@ -38,12 +38,25 @@
 namespace spfft {
 class GPUEventHandle {
 public:
-  explicit GPUEventHandle(const bool enableTiming) : deviceId_(0) {
+  explicit GPUEventHandle(const bool enableTiming, const bool interProcess = false) : deviceId_(0) {
     gpu::check_status(gpu::get_device(&deviceId_));
     gpu::EventType event;
 
-    const auto flag = enableTiming ? gpu::flag::EventDefault : gpu::flag::EventDisableTiming;
+    auto flag = enableTiming ? gpu::flag::EventDefault : gpu::flag::EventDisableTiming;
+    if(interProcess) flag |= gpu::flag::EventInterprocess;
     gpu::check_status(gpu::event_create_with_flags(&event, flag));
+
+    event_ = std::shared_ptr<gpu::EventType>(new gpu::EventType(event), [](gpu::EventType* ptr) {
+        std::ignore = gpu::event_destroy(*ptr);
+      delete ptr;
+    });
+  };
+
+  explicit GPUEventHandle(const gpu::IpcEventHandle& remoteEvent) : deviceId_(0) {
+    gpu::check_status(gpu::get_device(&deviceId_));
+    gpu::EventType event;
+
+    gpu::check_status(gpu::ipc_open_event_handle(&event, remoteEvent));
 
     event_ = std::shared_ptr<gpu::EventType>(new gpu::EventType(event), [](gpu::EventType* ptr) {
         std::ignore = gpu::event_destroy(*ptr);

@@ -30,7 +30,11 @@
 
 #include <complex>
 #include <memory>
+#include <vector>
+
+#include "gpu_util/gpu_event_handle.hpp"
 #include "gpu_util/gpu_fft_api.hpp"
+#include "gpu_util/gpu_mem_view.hpp"
 #include "gpu_util/gpu_stream_handle.hpp"
 #include "memory/gpu_array.hpp"
 #include "memory/gpu_array_view.hpp"
@@ -68,14 +72,13 @@ public:
   // freqDomainBufferGPU and spaceDomainDataGPU MAY overlap
   TransposeMPICompactBufferedGPU(const std::shared_ptr<Parameters>& param,
                                  SpfftExchangeBackend exchBackend, MPICommunicatorHandle comm,
+                                 GPUStreamHandle stream,
                                  HostArrayView1D<ComplexType> spaceDomainBufferHost,
                                  GPUArrayView3D<ComplexGPUType> spaceDomainDataGPU,
                                  GPUArrayView1D<ComplexGPUType> spaceDomainBufferGPU,
-                                 GPUStreamHandle spaceDomainStream,
                                  HostArrayView1D<ComplexType> freqDomainBufferHost,
                                  GPUArrayView2D<ComplexGPUType> freqDomainDataGPU,
-                                 GPUArrayView1D<ComplexGPUType> freqDomainBufferGPU,
-                                 GPUStreamHandle freqDomainStream);
+                                 GPUArrayView1D<ComplexGPUType> freqDomainBufferGPU);
 
   auto pack_backward() -> void override;
   auto exchange_backward_start(const bool nonBlockingExchange) -> void override;
@@ -106,13 +109,18 @@ private:
   GPUArrayView2D<ComplexGPUType> freqDomainDataGPU_;
   GPUArrayView1D<ComplexExchangeGPUType> spaceDomainBufferGPU_;
   GPUArrayView1D<ComplexExchangeGPUType> freqDomainBufferGPU_;
-  GPUStreamHandle spaceDomainStream_;
-  GPUStreamHandle freqDomainStream_;
+  GPUStreamHandle stream_;
 
   GPUArray<int> numZSticksGPU_;
   GPUArray<int> numXYPlanesGPU_;
   GPUArray<int> xyPlaneOffsetsGPU_;
   GPUArray<int> indicesGPU_;
+
+  std::vector<GPUEventHandle> remoteEvents_;
+  std::vector<GPUMemView<ComplexExchangeGPUType>> remoteFreqDomainGPU_;
+  std::vector<GPUMemView<ComplexExchangeGPUType>> remoteSpaceDomainGPU_;
+  std::vector<int> remoteSpaceDomainDispls_;
+  std::vector<int> remoteFreqDomainDispls_;
 };
 
 }  // namespace spfft

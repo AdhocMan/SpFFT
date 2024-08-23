@@ -25,7 +25,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+#include "gpu_util/gpu_runtime_api.hpp"
 #include "spfft/config.h"
 #if defined(SPFFT_MPI) && (defined(SPFFT_CUDA) || defined(SPFFT_ROCM))
 #include <algorithm>
@@ -57,12 +57,13 @@ namespace spfft {
 template <typename T, typename U>
 TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
     const std::shared_ptr<Parameters>& param, SpfftExchangeBackend exchBackend,
-    MPICommunicatorHandle comm, HostArrayView1D<ComplexType> spaceDomainBufferHost,
+    MPICommunicatorHandle comm, GPUStreamHandle stream,
+    HostArrayView1D<ComplexType> spaceDomainBufferHost,
     GPUArrayView3D<ComplexGPUType> spaceDomainDataGPU,
-    GPUArrayView1D<ComplexGPUType> spaceDomainBufferGPU, GPUStreamHandle spaceDomainStream,
+    GPUArrayView1D<ComplexGPUType> spaceDomainBufferGPU,
     HostArrayView1D<ComplexType> freqDomainBufferHost,
     GPUArrayView2D<ComplexGPUType> freqDomainDataGPU,
-    GPUArrayView1D<ComplexGPUType> freqDomainBufferGPU, GPUStreamHandle freqDomainStream)
+    GPUArrayView1D<ComplexGPUType> freqDomainBufferGPU)
     : param_(param),
       exchBackend_(exchBackend),
       comm_(std::move(comm)),
@@ -79,8 +80,7 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
           param_->total_num_z_sticks() * param_->num_xy_planes(comm_.rank()))),
       freqDomainBufferGPU_(create_new_type_1d_view<ComplexExchangeGPUType>(
           freqDomainBufferGPU, param_->num_z_sticks(comm_.rank()) * param_->total_num_xy_planes())),
-      spaceDomainStream_(std::move(spaceDomainStream)),
-      freqDomainStream_(std::move(freqDomainStream)) {
+      stream_(std::move(stream)) {
   assert(param_->dim_y() == spaceDomainDataGPU.dim_mid());
   assert(param_->dim_x_freq() == spaceDomainDataGPU.dim_inner());
   assert(param_->num_xy_planes(comm_.rank()) == spaceDomainDataGPU.dim_outer());
@@ -167,17 +167,82 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
   copy_to_gpu(xyPlaneOffsetsHost, xyPlaneOffsetsGPU_);
   copy_to_gpu(indicesHost, indicesGPU_);
 
+  try {
+    // events
+    remoteEvents_.clear();
+    GPUEventHandle localEvent(false, true);
+    gpu::IpcEventHandle ipcEvent;
+    gpu::check_status(gpu::ipc_get_event_handle(&ipcEvent, localEvent.get()));
+
+    std::vector<gpu::IpcEventHandle> remoteIpcEventHandles(comm_.size());
+    mpi_check_status(MPI_Allgather(&ipcEvent, sizeof(decltype(ipcEvent)), MPI_BYTE,
+                                   remoteIpcEventHandles.data(), sizeof(decltype(ipcEvent)),
+                                   MPI_BYTE, comm_.get()));
+
+    for(SizeType r = 0; r < comm_.size(); ++r) {
+      if(r== comm_.rank()) {
+        remoteEvents_.emplace_back(std::move(localEvent));
+      } else {
+        remoteEvents_.emplace_back(remoteIpcEventHandles[r]);
+      }
+    }
+
+    // mem handles
+    gpu::IpcMemHandle localFreqHandle;
+    gpu::check_status(gpu::ipc_get_mem_handle(&localFreqHandle, freqDomainBufferGPU_.data()));
+    std::vector<gpu::IpcMemHandle> remoteFreqMemHandles(comm_.size());
+    mpi_check_status(MPI_Allgather(&localFreqHandle, sizeof(decltype(localFreqHandle)), MPI_BYTE,
+                                   remoteFreqMemHandles.data(), sizeof(decltype(localFreqHandle)),
+                                   MPI_BYTE, comm_.get()));
+    for (SizeType r = 0; r < comm_.size(); ++r) {
+      if (r == comm_.rank())
+        remoteFreqDomainGPU_.emplace_back(freqDomainBufferGPU_.data());
+      else
+        remoteFreqDomainGPU_.emplace_back(remoteFreqMemHandles[r]);
+    }
+
+    gpu::IpcMemHandle localSpaceHandle;
+    gpu::check_status(gpu::ipc_get_mem_handle(&localSpaceHandle, spaceDomainBufferGPU_.data()));
+    std::vector<gpu::IpcMemHandle> remoteSpaceMemHandles(comm_.size());
+    mpi_check_status(MPI_Allgather(&localSpaceHandle, sizeof(decltype(localSpaceHandle)), MPI_BYTE,
+                                   remoteSpaceMemHandles.data(), sizeof(decltype(localSpaceHandle)),
+                                   MPI_BYTE, comm_.get()));
+    for(SizeType r = 0; r < comm_.size(); ++r) {
+      if (r == comm_.rank())
+        remoteSpaceDomainGPU_.emplace_back(spaceDomainBufferGPU_.data());
+      else
+        remoteSpaceDomainGPU_.emplace_back(remoteSpaceMemHandles[r]);
+    }
+
+    remoteSpaceDomainDispls_.resize(comm_.size());
+    remoteFreqDomainDispls_.resize(comm_.size());
+
+    mpi_check_status(MPI_Alltoall(freqDomainDispls_.data(), 1, MPIMatchElementaryType<int>::get(),
+                                  remoteFreqDomainDispls_.data(), 1,
+                                  MPIMatchElementaryType<int>::get(), comm_.get()));
+    mpi_check_status(MPI_Alltoall(spaceDomainDispls_.data(), 1, MPIMatchElementaryType<int>::get(),
+                                  remoteSpaceDomainDispls_.data(), 1,
+                                  MPIMatchElementaryType<int>::get(), comm_.get()));
+
+    exchBackend_ = SPFFT_EXCH_BACKEND_IPC;
+
+  } catch (...) {
+    remoteEvents_.clear();
+    remoteFreqDomainGPU_.clear();
+    remoteSpaceDomainGPU_.clear();
+    printf("IPC ERROR!\n");
+  }
 }
 
 template <typename T, typename U>
 auto TransposeMPICompactBufferedGPU<T, U>::pack_backward() -> void {
   if (freqDomainDataGPU_.size() > 0 && freqDomainBufferGPU_.size() > 0) {
-    compact_buffered_pack_backward(freqDomainStream_.get(), param_->max_num_xy_planes(),
+    compact_buffered_pack_backward(stream_.get(), param_->max_num_xy_planes(),
                                    create_1d_view(numXYPlanesGPU_, 0, numXYPlanesGPU_.size()),
                                    create_1d_view(xyPlaneOffsetsGPU_, 0, xyPlaneOffsetsGPU_.size()),
                                    freqDomainDataGPU_, freqDomainBufferGPU_);
     if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
-      copy_from_gpu_async(freqDomainStream_, freqDomainBufferGPU_, freqDomainBufferHost_);
+      copy_from_gpu_async(stream_, freqDomainBufferGPU_, freqDomainBufferHost_);
   }
 }
 
@@ -187,11 +252,12 @@ auto TransposeMPICompactBufferedGPU<T, U>::unpack_backward() -> void {
     gpu::check_status(gpu::memset_async(
         static_cast<void*>(spaceDomainDataGPU_.data()), 0,
         spaceDomainDataGPU_.size() * sizeof(typename decltype(spaceDomainDataGPU_)::ValueType),
-        spaceDomainStream_.get()));
+        stream_.get()));
     if (spaceDomainBufferGPU_.size() > 0) {
       if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
-        copy_to_gpu_async(spaceDomainStream_, spaceDomainBufferHost_, spaceDomainBufferGPU_);
-      compact_buffered_unpack_backward(spaceDomainStream_.get(), param_->max_num_z_sticks(),
+        copy_to_gpu_async(stream_, spaceDomainBufferHost_, spaceDomainBufferGPU_);
+
+      compact_buffered_unpack_backward(stream_.get(), param_->max_num_z_sticks(),
                                        create_1d_view(numZSticksGPU_, 0, numZSticksGPU_.size()),
                                        create_1d_view(indicesGPU_, 0, indicesGPU_.size()),
                                        spaceDomainBufferGPU_, spaceDomainDataGPU_);
@@ -204,6 +270,53 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
     -> void {
   assert(omp_get_thread_num() == 0);  // only must thread must be allowed to enter
 
+  if(exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_IPC) {
+    // barrier
+    if(comm_.rank() == 0){
+      for(SizeType r = 1; r < comm_.size(); ++r){
+        gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[r].get(), 0));
+        gpu::check_status(gpu::event_record(remoteEvents_[0].get(), stream_.get()));
+      }
+    } else {
+      gpu::check_status(gpu::event_record(remoteEvents_[comm_.rank()].get(), stream_.get()));
+      gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[0].get(), 0));
+    }
+
+    // gpu::device_synchronize();
+    // mpi_check_status(MPI_Barrier(comm_.get()));
+
+    // copy
+    for (SizeType i = comm_.rank(); i < comm_.rank() + comm_.size(); ++i) {
+      const auto r = i % comm_.size();
+
+      if (spaceDomainCount_[r]) {
+        gpu::check_status(
+            gpu::memcpy_async(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
+                              remoteFreqDomainGPU_[r].get() + remoteFreqDomainDispls_[r],
+                              spaceDomainCount_[r] * sizeof(ComplexExchangeGPUType),
+                              gpu::flag::MemcpyDeviceToDevice, stream_.get()));
+      }
+    }
+
+    // gpu::device_synchronize();
+    // mpi_check_status(MPI_Barrier(comm_.get()));
+
+    // barrier
+    if (comm_.rank() == 0) {
+      for (SizeType r = 1; r < comm_.size(); ++r) {
+        gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[r].get(), 0));
+        gpu::check_status(gpu::event_record(remoteEvents_[0].get(), stream_.get()));
+      }
+    } else {
+      gpu::check_status(gpu::event_record(remoteEvents_[comm_.rank()].get(), stream_.get()));
+      gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[0].get(), 0));
+    }
+
+
+    // exit
+    return;
+  }
+
 #ifdef SPFFT_NCCL
   if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_NCCL) {
     auto ncclType = ncclFloat64;
@@ -211,15 +324,14 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
 
     ncclGroupStart();
     for (SizeType r = 0; r < comm_.size(); ++r) {
-      // if(r == comm_.rank()) continue;
       if(freqDomainCount_[r])
         nccl_check_status(ncclSend(freqDomainBufferGPU_.data() + freqDomainDispls_[r],
                                    2 * freqDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
-                                   freqDomainStream_.get()));
+                                   stream_.get()));
       if(spaceDomainCount_[r])
         nccl_check_status(ncclRecv(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
                                    2 * spaceDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
-                                   spaceDomainStream_.get()));
+                                   stream_.get()));
     }
     ncclGroupEnd();
 
@@ -235,7 +347,7 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
     recvBufferPtr = spaceDomainBufferGPU_.data();
   }
 
-  gpu::check_status(gpu::stream_synchronize(freqDomainStream_.get()));
+  gpu::check_status(gpu::stream_synchronize(stream_.get()));
 
   if (nonBlockingExchange) {
     mpi_check_status(MPI_Ialltoallv(
@@ -257,23 +369,25 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_finalize() -> void 
 template <typename T, typename U>
 auto TransposeMPICompactBufferedGPU<T, U>::pack_forward() -> void {
   if (spaceDomainDataGPU_.size() > 0 && spaceDomainBufferGPU_.size() > 0) {
-    compact_buffered_pack_forward(spaceDomainStream_.get(), param_->max_num_z_sticks(),
+    compact_buffered_pack_forward(stream_.get(), param_->max_num_z_sticks(),
                                   create_1d_view(numZSticksGPU_, 0, numZSticksGPU_.size()),
                                   create_1d_view(indicesGPU_, 0, indicesGPU_.size()),
                                   spaceDomainDataGPU_, spaceDomainBufferGPU_);
 
     if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
-      copy_from_gpu_async(spaceDomainStream_, spaceDomainBufferGPU_, spaceDomainBufferHost_);
+      copy_from_gpu_async(stream_, spaceDomainBufferGPU_, spaceDomainBufferHost_);
   }
 }
 
 template <typename T, typename U>
 auto TransposeMPICompactBufferedGPU<T, U>::unpack_forward() -> void {
   if (freqDomainDataGPU_.size() > 0 && freqDomainBufferGPU_.size() > 0) {
+
     if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST)
-      copy_to_gpu_async(freqDomainStream_, freqDomainBufferHost_, freqDomainBufferGPU_);
+      copy_to_gpu_async(stream_, freqDomainBufferHost_, freqDomainBufferGPU_);
+
     compact_buffered_unpack_forward(
-        freqDomainStream_.get(), param_->max_num_xy_planes(),
+        stream_.get(), param_->max_num_xy_planes(),
         create_1d_view(numXYPlanesGPU_, 0, numXYPlanesGPU_.size()),
         create_1d_view(xyPlaneOffsetsGPU_, 0, xyPlaneOffsetsGPU_.size()), freqDomainBufferGPU_,
         freqDomainDataGPU_);
@@ -296,11 +410,11 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_forward_start(const bool non
       if (spaceDomainCount_[r])
         nccl_check_status(ncclSend(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
                                    2 * spaceDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
-                                   spaceDomainStream_.get()));
+                                   stream_.get()));
       if (freqDomainCount_[r])
         nccl_check_status(ncclRecv(freqDomainBufferGPU_.data() + freqDomainDispls_[r],
                                    2 * freqDomainCount_[r], ncclType, r, comm_.get_nccl().get(),
-                                   freqDomainStream_.get()));
+                                   stream_.get()));
     }
     ncclGroupEnd();
 
@@ -310,7 +424,7 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_forward_start(const bool non
 #endif
 
 
-  gpu::check_status(gpu::stream_synchronize(spaceDomainStream_.get()));
+  gpu::check_status(gpu::stream_synchronize(stream_.get()));
 
   void* sendBufferPtr = spaceDomainBufferHost_.data();
   void* recvBufferPtr = freqDomainBufferHost_.data();

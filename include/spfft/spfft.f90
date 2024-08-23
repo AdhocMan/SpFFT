@@ -43,6 +43,7 @@ integer(c_int), parameter ::                  &
     SPFFT_EXCH_BACKEND_MPI_HOST         = 1,  &
     SPFFT_EXCH_BACKEND_MPI_GPU          = 2,  &
     SPFFT_EXCH_BACKEND_NCCL             = 3,  &
+    SPFFT_EXCH_BACKEND_IPC              = 4,  &
 
     SPFFT_PU_HOST                       = 1,  &
     SPFFT_PU_GPU                        = 2,  &
