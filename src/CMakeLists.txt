@@ -28,6 +28,7 @@ if(SPFFT_CUDA OR SPFFT_ROCM)
 		symmetry/gpu_kernels/symmetry_kernels.cu
 		transpose/gpu_kernels/buffered_kernels.cu
 		transpose/gpu_kernels/compact_buffered_kernels.cu
+		transpose/gpu_kernels/sync_kernels.cu
 		)
 	list(APPEND SPFFT_SOURCE_FILES
 		execution/execution_gpu.cpp

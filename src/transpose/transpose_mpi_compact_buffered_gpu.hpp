@@ -121,6 +121,12 @@ private:
   std::vector<GPUMemView<ComplexExchangeGPUType>> remoteSpaceDomainGPU_;
   std::vector<int> remoteSpaceDomainDispls_;
   std::vector<int> remoteFreqDomainDispls_;
+  GPUArray<unsigned int> localSync1_;
+  GPUArray<unsigned int> localSync2_;
+  std::vector<GPUMemView<unsigned int>> remoteSync1_;
+  std::vector<GPUMemView<unsigned int>> remoteSync2_;
+  unsigned int syncCounter_ = 1;
+
 };
 
 }  // namespace spfft
