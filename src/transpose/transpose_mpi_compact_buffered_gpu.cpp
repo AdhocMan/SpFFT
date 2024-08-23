@@ -180,7 +180,7 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
                                    MPI_BYTE, comm_.get()));
 
     for(SizeType r = 0; r < comm_.size(); ++r) {
-      if(r== comm_.rank()) {
+      if (r == comm_.rank()) {
         remoteEvents_.emplace_back(std::move(localEvent));
       } else {
         remoteEvents_.emplace_back(remoteIpcEventHandles[r]);
@@ -271,24 +271,12 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
   assert(omp_get_thread_num() == 0);  // only must thread must be allowed to enter
 
   if(exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_IPC) {
-    // barrier
-    if(comm_.rank() == 0){
-      for(SizeType r = 1; r < comm_.size(); ++r){
-        gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[r].get(), 0));
-        gpu::check_status(gpu::event_record(remoteEvents_[0].get(), stream_.get()));
-      }
-    } else {
-      gpu::check_status(gpu::event_record(remoteEvents_[comm_.rank()].get(), stream_.get()));
-      gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[0].get(), 0));
-    }
-
-    // gpu::device_synchronize();
-    // mpi_check_status(MPI_Barrier(comm_.get()));
+    gpu::stream_synchronize(stream_.get());
+    mpi_check_status(MPI_Barrier(comm_.get()));
 
     // copy
     for (SizeType i = comm_.rank(); i < comm_.rank() + comm_.size(); ++i) {
       const auto r = i % comm_.size();
-
       if (spaceDomainCount_[r]) {
         gpu::check_status(
             gpu::memcpy_async(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
@@ -298,20 +286,8 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
       }
     }
 
-    // gpu::device_synchronize();
-    // mpi_check_status(MPI_Barrier(comm_.get()));
-
-    // barrier
-    if (comm_.rank() == 0) {
-      for (SizeType r = 1; r < comm_.size(); ++r) {
-        gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[r].get(), 0));
-        gpu::check_status(gpu::event_record(remoteEvents_[0].get(), stream_.get()));
-      }
-    } else {
-      gpu::check_status(gpu::event_record(remoteEvents_[comm_.rank()].get(), stream_.get()));
-      gpu::check_status(gpu::stream_wait_event(stream_.get(), remoteEvents_[0].get(), 0));
-    }
-
+    gpu::stream_synchronize(stream_.get());
+    mpi_check_status(MPI_Barrier(comm_.get()));
 
     // exit
     return;
@@ -398,6 +374,30 @@ template <typename T, typename U>
 auto TransposeMPICompactBufferedGPU<T, U>::exchange_forward_start(const bool nonBlockingExchange)
     -> void {
   assert(omp_get_thread_num() == 0);  // only must thread must be allowed to enter
+
+  if(exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_IPC) {
+    gpu::stream_synchronize(stream_.get());
+    mpi_check_status(MPI_Barrier(comm_.get()));
+
+    // copy
+    for (SizeType i = comm_.rank(); i < comm_.rank() + comm_.size(); ++i) {
+      const auto r = i % comm_.size();
+
+      if (freqDomainCount_[r]) {
+        gpu::check_status(
+            gpu::memcpy_async(freqDomainBufferGPU_.data() + freqDomainDispls_[r],
+                              remoteSpaceDomainGPU_[r].get() + remoteSpaceDomainDispls_[r],
+                              freqDomainCount_[r] * sizeof(ComplexExchangeGPUType),
+                              gpu::flag::MemcpyDeviceToDevice, stream_.get()));
+      }
+    }
+
+    gpu::stream_synchronize(stream_.get());
+    mpi_check_status(MPI_Barrier(comm_.get()));
+
+    // exit
+    return;
+  }
 
 #ifdef SPFFT_NCCL
   if (exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_NCCL) {
