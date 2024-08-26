@@ -51,7 +51,6 @@
 #include "mpi_util/mpi_datatype_handle.hpp"
 #include "mpi_util/mpi_match_elementary_type.hpp"
 #include "transpose/gpu_kernels/compact_buffered_kernels.hpp"
-#include "transpose/gpu_kernels/sync_kernels.hpp"
 #include "transpose/transpose_mpi_compact_buffered_gpu.hpp"
 
 namespace spfft {
@@ -225,46 +224,8 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
                                   remoteSpaceDomainDispls_.data(), 1,
                                   MPIMatchElementaryType<int>::get(), comm_.get()));
 
-    // Sync handles
-    localSync1_ = GPUArray<unsigned int>(1);
-    localSync2_ = GPUArray<unsigned int>(1);
-    unsigned int initValue = 0;
-    gpu::check_status(gpu::memcpy_async(localSync1_.data(), &initValue, sizeof(unsigned int),
-                                        gpu::flag::MemcpyHostToDevice, stream_.get()));
-    gpu::check_status(gpu::memcpy_async(localSync2_.data(), &initValue, sizeof(unsigned int),
-                                        gpu::flag::MemcpyHostToDevice, stream_.get()));
-
-    // make sure its visible to all other devices (ensured through stream + MPI sync)
-    gpu::stream_synchronize(stream_.get());
-
-    gpu::IpcMemHandle localSync1Handle;
-    gpu::check_status(gpu::ipc_get_mem_handle(&localSync1Handle, localSync1_.data()));
-    std::vector<gpu::IpcMemHandle> remoteSync1MemHandles(comm_.size());
-    mpi_check_status(MPI_Allgather(&localSync1Handle, sizeof(decltype(localSync1Handle)), MPI_BYTE,
-                                   remoteSync1MemHandles.data(), sizeof(decltype(localSync1Handle)),
-                                   MPI_BYTE, comm_.get()));
-    for(SizeType r = 0; r < comm_.size(); ++r) {
-      if (r == comm_.rank())
-        remoteSync1_.emplace_back(localSync1_.data());
-      else
-        remoteSync1_.emplace_back(remoteSync1MemHandles[r]);
-    }
-
-    gpu::IpcMemHandle localSync2Handle;
-    gpu::check_status(gpu::ipc_get_mem_handle(&localSync2Handle, localSync2_.data()));
-    std::vector<gpu::IpcMemHandle> remoteSync2MemHandles(comm_.size());
-    mpi_check_status(MPI_Allgather(&localSync2Handle, sizeof(decltype(localSync2Handle)), MPI_BYTE,
-                                   remoteSync2MemHandles.data(), sizeof(decltype(localSync2Handle)),
-                                   MPI_BYTE, comm_.get()));
-    for(SizeType r = 0; r < comm_.size(); ++r) {
-      if (r == comm_.rank())
-        remoteSync2_.emplace_back(localSync2_.data());
-      else
-        remoteSync2_.emplace_back(remoteSync2MemHandles[r]);
-    }
-
-
     exchBackend_ = SPFFT_EXCH_BACKEND_IPC;
+
   } catch (...) {
     remoteEvents_.clear();
     remoteFreqDomainGPU_.clear();
@@ -310,19 +271,13 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
   assert(omp_get_thread_num() == 0);  // only must thread must be allowed to enter
 
   if(exchBackend_ == SpfftExchangeBackend::SPFFT_EXCH_BACKEND_IPC) {
-    ++syncCounter_;
-
-    signal_value(stream_.get(), localSync1_.data(), syncCounter_);
-
-    // gpu::stream_synchronize(stream_.get());
-    // mpi_check_status(MPI_Barrier(comm_.get()));
+    gpu::stream_synchronize(stream_.get());
+    mpi_check_status(MPI_Barrier(comm_.get()));
 
     // copy
     for (SizeType i = comm_.rank(); i < comm_.rank() + comm_.size(); ++i) {
       const auto r = i % comm_.size();
       if (spaceDomainCount_[r]) {
-        if (r != comm_.rank()) wait_for_value(stream_.get(), remoteSync1_[r].get(), syncCounter_);
-
         gpu::check_status(
             gpu::memcpy_async(spaceDomainBufferGPU_.data() + spaceDomainDispls_[r],
                               remoteFreqDomainGPU_[r].get() + remoteFreqDomainDispls_[r],
@@ -331,14 +286,8 @@ auto TransposeMPICompactBufferedGPU<T, U>::exchange_backward_start(const bool no
       }
     }
 
-    signal_value(stream_.get(), localSync2_.data(), syncCounter_);
-    for (SizeType i = comm_.rank(); i < comm_.rank() + comm_.size(); ++i) {
-      const auto r = i % comm_.size();
-        if (r != comm_.rank()) wait_for_value(stream_.get(), remoteSync2_[r].get(), syncCounter_);
-    }
-
-    // gpu::stream_synchronize(stream_.get());
-    // mpi_check_status(MPI_Barrier(comm_.get()));
+    gpu::stream_synchronize(stream_.get());
+    mpi_check_status(MPI_Barrier(comm_.get()));
 
     // exit
     return;
