@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 #include <type_traits>
+#include <tuple>
 #include "memory/array_view_utility.hpp"
 #include "memory/host_array_view.hpp"
 #include "parameters/parameters.hpp"
@@ -266,6 +267,7 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
 
     exchBackend_ = SPFFT_EXCH_BACKEND_IPC;
   } catch (...) {
+    std::ignore = gpu::get_last_error();
     remoteEvents_.clear();
     remoteFreqDomainGPU_.clear();
     remoteSpaceDomainGPU_.clear();

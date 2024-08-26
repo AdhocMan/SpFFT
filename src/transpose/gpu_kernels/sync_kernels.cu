@@ -31,8 +31,12 @@
 
 namespace spfft {
 
-__global__ static void signal_value_kernel(unsigned int* addr, unsigned int value) {
-  if (threadIdx.x == 0) atomicExch_system(addr, value);
+__global__ static void signal_value_kernel(volatile unsigned int* addr, unsigned int value) {
+  if (threadIdx.x == 0) {
+   // atomicExch_system(addr, value);
+   __threadfence_system();
+   atomicExch_system(addr, value);
+  }
 }
 
 auto signal_value(const gpu::StreamType& stream, unsigned int* addr, unsigned int value) -> void {
@@ -41,10 +45,10 @@ auto signal_value(const gpu::StreamType& stream, unsigned int* addr, unsigned in
   launch_kernel(signal_value_kernel, threadGrid, threadBlock, 0, stream, addr, value);
 }
 
-__global__ static void wait_for_value_kernel(unsigned int* addr, unsigned int expected) {
+__global__ static void wait_for_value_kernel(volatile unsigned int* addr, unsigned int expected) {
   if (threadIdx.x == 0) {
-    while (atomicCAS_system(addr, expected, expected) != expected) {
-    }
+   while (*addr != expected) {
+   }
   }
 }
 
