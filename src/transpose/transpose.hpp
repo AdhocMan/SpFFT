@@ -71,6 +71,8 @@ class Exchange {
 public:
   virtual auto start(bool nonBlocking) -> void {}
   virtual auto finalize() -> void {}
+
+  virtual ~Exchange() = default;
 };
 
 }  // namespace spfft
