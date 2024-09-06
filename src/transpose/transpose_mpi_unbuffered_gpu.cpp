@@ -51,13 +51,13 @@
 namespace spfft {
 template <typename T>
 TransposeMPIUnbufferedGPU<T>::TransposeMPIUnbufferedGPU(
-    const std::shared_ptr<Parameters>& param, SpfftExchangeBackend exchBackend,
+    const std::shared_ptr<Parameters>& param, const std::vector<SpfftExchangeBackend>& exchBackends,
     MPICommunicatorHandle comm, HostArrayView3D<ComplexType> spaceDomainData,
     GPUArrayView3D<typename gpu::fft::ComplexType<ValueType>::type> spaceDomainDataGPU,
     GPUStreamHandle spaceDomainStream, HostArrayView2D<ComplexType> freqDomainData,
     GPUArrayView2D<typename gpu::fft::ComplexType<ValueType>::type> freqDomainDataGPU,
     GPUStreamHandle freqDomainStream)
-    : exchBackend_(exchBackend),
+    : exchBackend_(SPFFT_EXCH_BACKEND_MPI_HOST),
       comm_(std::move(comm)),
       spaceDomainBufferHost_(spaceDomainData),
       freqDomainBufferHost_(freqDomainData),
@@ -73,10 +73,13 @@ TransposeMPIUnbufferedGPU<T>::TransposeMPIUnbufferedGPU(
   assert(param->dim_z() == freqDomainData.dim_inner());
   assert(param->num_z_sticks(comm_.rank()) == freqDomainData.dim_outer());
 
-  assert(exchBackend_ != SPFFT_EXCH_BACKEND_NCCL);
-#ifndef SPFFT_GPU_DIRECT
-  assert(exchBackend_ != SPFFT_EXCH_BACKEND_MPI_GPU);
-#endif
+  // set exchange type
+  if (std::find(exchBackends.begin(), exchBackends.end(), SPFFT_EXCH_BACKEND_MPI_HOST) !=
+      exchBackends.end()) {
+    exchBackend_ = SPFFT_EXCH_BACKEND_MPI_HOST;
+  } else {
+    throw InternalError();
+  }
 
   // create underlying type
   MPIDatatypeHandle complexType =

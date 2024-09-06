@@ -122,7 +122,7 @@ TransformInternal<T>::TransformInternal(SpfftProcessingUnitType executionUnit,
       GPUDeviceGuard(grid_->device_id());
 
       execGPU_.reset(new ExecutionGPU<T>(
-          grid_->communicator(), grid_->system_topology(), grid_->exchange_type(),
+          grid_->communicator(), grid_->exchange_backends(), grid_->exchange_type(),
           grid_->num_threads(), param_, grid_->array_host_1(), grid_->array_host_2(),
           grid_->array_gpu_1(), grid_->array_gpu_2(), grid_->fft_work_buffer()));
 

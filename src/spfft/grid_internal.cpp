@@ -25,12 +25,14 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include "spfft/config.h"
+#include "spfft/grid_internal.hpp"
 
 #include <complex>
-#include <memory>
 #include <limits>
-#include "spfft/grid_internal.hpp"
+#include <memory>
+#include <tuple>
+
+#include "spfft/config.h"
 
 #ifdef SPFFT_MPI
 #include "mpi_util/mpi_check_status.hpp"
@@ -41,6 +43,9 @@
 #if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
 #include "gpu_util/gpu_device_guard.hpp"
 #include "gpu_util/gpu_runtime_api.hpp"
+#ifdef SPFFT_MPI
+#include "gpu_util/ipc_util.hpp"
+#endif
 #endif
 
 namespace spfft {
@@ -224,10 +229,26 @@ GridInternal<T>::GridInternal(int maxDimX, int maxDimY, int maxDimZ, int maxNumL
 
     // each transform will resize the work buffer as needed
     fftWorkBuffer_.reset(new GPUArray<char>());
+
+    // check availble gpu exchange backends
+    if(stopo_.numNodes == 1 && gpu_ipc_available(comm_)) {
+      exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_IPC);
+    }
+#ifdef SPFFT_NCCL
+    if(stopo_.numDevices == comm_.size() && comm_.init_nccl()) {
+      exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_NCCL);
+    }
+#endif
+#ifdef SPFFT_GPU_DIRECT
+    exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_MPI_GPU);
+#endif
+
 #else
     throw GPUSupportError();
 #endif
   }
+
+  exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_MPI_HOST);
 }
 #endif
 
@@ -247,6 +268,8 @@ GridInternal<T>::GridInternal(const GridInternal<T>& grid)
 #ifdef SPFFT_MPI
   if (!grid.isLocal_) comm_ = MPICommunicatorHandle(grid.comm_.get());
   exchangeType_ = grid.exchangeType_;
+  stopo_ = grid.stopo_;
+  exchangeBackends_ = grid.exchangeBackends_;
 #endif
 #if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
   if (grid.executionUnit_ & SPFFT_PU_GPU) {
@@ -261,6 +284,7 @@ GridInternal<T>::GridInternal(const GridInternal<T>& grid)
     if (grid.fftWorkBuffer_) fftWorkBuffer_.reset(new GPUArray<char>(grid.fftWorkBuffer_->size()));
   }
 #endif
+
 }
 
 // instatiate templates for float and double

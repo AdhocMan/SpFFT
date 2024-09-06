@@ -16,10 +16,12 @@
 
 #if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
 #include "execution/execution_gpu.hpp"
+#include "gpu_util/ipc_util.hpp"
 #include "memory/gpu_array.hpp"
 #include "transpose/transpose_mpi_buffered_gpu.hpp"
 #include "transpose/transpose_mpi_compact_buffered_gpu.hpp"
 #include "transpose/transpose_mpi_unbuffered_gpu.hpp"
+#include "mpi_util/system_topology.hpp"
 
 using namespace spfft;
 
@@ -130,10 +132,16 @@ protected:
 
     if(exchBackend == SPFFT_EXCH_BACKEND_NCCL) {
 #ifdef SPFFT_NCCL
+      SystemTopology stopo(comm_.get(), SPFFT_PU_GPU);
+      if (stopo.numDevices != comm_.size()) GTEST_SKIP();
       if (!comm_.init_nccl()) GTEST_SKIP();
 #else
       GTEST_SKIP();
 #endif
+    }
+
+    if(exchBackend == SPFFT_EXCH_BACKEND_IPC) {
+      if (!gpu_ipc_available(comm_)) GTEST_SKIP();
     }
 
     auto freqXYView = create_3d_view(array2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
@@ -165,16 +173,16 @@ protected:
     switch (exchType) {
       case SPFFT_EXCH_COMPACT_BUFFERED:
         transpose.reset(new TransposeMPICompactBufferedGPU<double, double>(
-            paramPtr_, exchBackend, comm_, stream, transposeBufferXY, freqXYViewGPU,
+            paramPtr_, {exchBackend}, comm_, stream, transposeBufferXY, freqXYViewGPU,
             transposeBufferXYGPU, transposeBufferZ, freqViewGPU, transposeBufferZGPU));
         break;
       case SPFFT_EXCH_BUFFERED:
         transpose.reset(new TransposeMPIBufferedGPU<double, double>(
-            paramPtr_, exchBackend, comm_, transposeBufferXY, freqXYViewGPU, transposeBufferXYGPU,
+            paramPtr_, {exchBackend}, comm_, transposeBufferXY, freqXYViewGPU, transposeBufferXYGPU,
             stream, transposeBufferZ, freqViewGPU, transposeBufferZGPU, stream));
         break;
       case SPFFT_EXCH_UNBUFFERED:
-        transpose.reset(new TransposeMPIUnbufferedGPU<double>(paramPtr_, exchBackend, comm_,
+        transpose.reset(new TransposeMPIUnbufferedGPU<double>(paramPtr_, {exchBackend}, comm_,
                                                               freqXYView, freqXYViewGPU, stream,
                                                               freqView, freqViewGPU, stream));
         break;
@@ -246,6 +254,9 @@ static auto param_type_names(
     case SPFFT_EXCH_BACKEND_NCCL: {
       name += "NCCL";
     } break;
+    case SPFFT_EXCH_BACKEND_IPC: {
+      name += "IPC";
+    } break;
     case SPFFT_EXCH_BACKEND_LOCAL: {
       name += "LOCAL";
     } break;
@@ -254,26 +265,32 @@ static auto param_type_names(
   return name;
 }
 
-// instantiate tests with parameters
-INSTANTIATE_TEST_SUITE_P(
-    MPI, TransposeGPUTest,
-    ::testing::Combine(::testing::Values(SpfftExchangeType::SPFFT_EXCH_BUFFERED,
-                                         SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED,
-                                         SpfftExchangeType::SPFFT_EXCH_UNBUFFERED),
-                       ::testing::Values(SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_HOST
-#if defined(SPFFT_GPU_DIRECT)
-                                         ,
-                                         SpfftExchangeBackend::SPFFT_EXCH_BACKEND_MPI_GPU
-#endif
-                                         )),
-    param_type_names);
+INSTANTIATE_TEST_SUITE_P(MPI, TransposeGPUTest,
+                         ::testing::Values(
+                           std::make_tuple(SPFFT_EXCH_BUFFERED,
+                                                           SPFFT_EXCH_BACKEND_MPI_HOST),
+                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
+                                                           SPFFT_EXCH_BACKEND_MPI_HOST),
+                           std::make_tuple(SPFFT_EXCH_UNBUFFERED,
+                                                           SPFFT_EXCH_BACKEND_MPI_HOST),
 
-#if defined(SPFFT_NCCL)
-INSTANTIATE_TEST_SUITE_P(
-    NCCL, TransposeGPUTest,
-    ::testing::Combine(::testing::Values(SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED),
-                       ::testing::Values(SpfftExchangeBackend::SPFFT_EXCH_BACKEND_NCCL)),
-    param_type_names);
+                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
+                                                           SPFFT_EXCH_BACKEND_IPC),
+
+#ifdef SPFFT_GPU_DIRECT
+                           std::make_tuple(SPFFT_EXCH_BUFFERED,
+                                                           SPFFT_EXCH_BACKEND_MPI_GPU),
+                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
+                                                           SPFFT_EXCH_BACKEND_MPI_GPU),
 #endif
+
+#ifdef SPFFT_NCCL
+                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
+                                                           SPFFT_EXCH_BACKEND_NCCL)
+#endif
+                           ),
+                         param_type_names
+
+);
 
 #endif

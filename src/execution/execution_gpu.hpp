@@ -68,7 +68,7 @@ public:
 
 #ifdef SPFFT_MPI
   // Initialize a distributed execution on GPU
-  ExecutionGPU(MPICommunicatorHandle comm, const SystemTopology& stopo,
+  ExecutionGPU(MPICommunicatorHandle comm, const std::vector<SpfftExchangeBackend>& exchBackends,
                const SpfftExchangeType exchangeType, const int numThreads,
                std::shared_ptr<Parameters> param, HostArray<std::complex<T>>& array1,
                HostArray<std::complex<T>>& array2,

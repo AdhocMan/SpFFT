@@ -39,21 +39,6 @@
 namespace spfft {
 class NCCLCommHandle {
 public:
-  // explicit NCCLCommHandle()  {
-  //   ncclComm_t comm;
-
-  //   ncclUniqueId id;
-  //   nccl_check_status(ncclGetUniqueId(&id));
-  //   nccl_check_status(ncclGroupStart());
-  //   nccl_check_status(ncclCommInitRank(&comm, 1, id, 0));
-  //   nccl_check_status(ncclGroupEnd());
-
-  //   comm_ = std::shared_ptr<ncclComm_t>(new ncclComm_t(comm), [](ncclComm_t* ptr) {
-  //     std::ignore = ncclCommDestroy(*ptr);
-  //     delete ptr;
-  //   });
-  // };
-
   explicit NCCLCommHandle(ncclComm_t comm) {
     comm_ = std::shared_ptr<ncclComm_t>(new ncclComm_t(comm), [](ncclComm_t* ptr) {
       std::ignore = ncclCommDestroy(*ptr);

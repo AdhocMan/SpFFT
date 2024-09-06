@@ -30,6 +30,7 @@
 
 #include <complex>
 #include <memory>
+#include <vector>
 #include "gpu_util/gpu_fft_api.hpp"
 #include "gpu_util/gpu_stream_handle.hpp"
 #include "memory/gpu_array.hpp"
@@ -65,7 +66,9 @@ public:
   //
   // spaceDomainBufferGPU and freqDomainDataGPU MAY overlap
   // freqDomainBufferGPU and spaceDomainDataGPU MAY overlap
-  TransposeMPIBufferedGPU(const std::shared_ptr<Parameters>& param, SpfftExchangeBackend exchBackend, MPICommunicatorHandle comm,
+  TransposeMPIBufferedGPU(const std::shared_ptr<Parameters>& param,
+                          const std::vector<SpfftExchangeBackend>& exchBackends,
+                          MPICommunicatorHandle comm,
                           HostArrayView1D<ComplexType> spaceDomainBufferHost,
                           GPUArrayView3D<ComplexGPUType> spaceDomainDataGPU,
                           GPUArrayView1D<ComplexGPUType> spaceDomainBufferGPU,

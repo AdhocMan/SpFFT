@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <complex>
 #include <memory>
+#include <vector>
 #include "memory/host_array.hpp"
 #include "spfft/types.h"
 #include "util/common_types.hpp"
@@ -121,6 +122,10 @@ public:
   inline auto exchange_type() const -> SpfftExchangeType { return exchangeType_; }
 
   inline auto system_topology() const -> const SystemTopology& { return stopo_; }
+
+  inline auto exchange_backends() const -> const std::vector<SpfftExchangeBackend>& {
+    return exchangeBackends_;
+  }
 #endif
 
 private:
@@ -142,6 +147,7 @@ private:
   MPICommunicatorHandle comm_;
   SpfftExchangeType exchangeType_;
   SystemTopology stopo_;
+  std::vector<SpfftExchangeBackend> exchangeBackends_;
 #endif
 };
 

@@ -51,6 +51,7 @@
 #include "mpi_util/mpi_request_handle.hpp"
 
 namespace spfft {
+
 template <typename T, typename U>
 class TransposeMPICompactBufferedGPU : public Transpose {
   static_assert(IsFloatOrDouble<T>::value, "Type T must be float or double");
@@ -71,8 +72,8 @@ public:
   // spaceDomainBufferGPU and freqDomainDataGPU MAY overlap
   // freqDomainBufferGPU and spaceDomainDataGPU MAY overlap
   TransposeMPICompactBufferedGPU(const std::shared_ptr<Parameters>& param,
-                                 SpfftExchangeBackend exchBackend, MPICommunicatorHandle comm,
-                                 GPUStreamHandle stream,
+                                 const std::vector<SpfftExchangeBackend>& exchBackends,
+                                 MPICommunicatorHandle comm, GPUStreamHandle stream,
                                  HostArrayView1D<ComplexType> spaceDomainBufferHost,
                                  GPUArrayView3D<ComplexGPUType> spaceDomainDataGPU,
                                  GPUArrayView1D<ComplexGPUType> spaceDomainBufferGPU,
@@ -116,11 +117,15 @@ private:
   GPUArray<int> xyPlaneOffsetsGPU_;
   GPUArray<int> indicesGPU_;
 
+  // IPC
   std::vector<GPUEventHandle> remoteEvents_;
   std::vector<GPUMemView<ComplexExchangeGPUType>> remoteFreqDomainGPU_;
   std::vector<GPUMemView<ComplexExchangeGPUType>> remoteSpaceDomainGPU_;
   std::vector<int> remoteSpaceDomainDispls_;
   std::vector<int> remoteFreqDomainDispls_;
+
+  std::unique_ptr<Exchange<ComplexExchangeGPUType>> exchangeForward_;
+  std::unique_ptr<Exchange<ComplexExchangeGPUType>> exchangeBackward_;
 };
 
 }  // namespace spfft
