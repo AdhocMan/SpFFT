@@ -134,16 +134,16 @@ public:
       typename TransposeMPICompactBufferedGPU<T, U>::ComplexExchangeGPUType;
 
   ExchangeNCCL(MPICommunicatorHandle comm, ComplexExchangeGPUType* target,
-               ComplexExchangeGPUType* source, std::vector<int> targetDispls,
-               std::vector<int> sourceDispls, std::vector<int> sendCount,
-               std::vector<int> recvCount, GPUStreamHandle stream)
+              std::vector<int> targetCount, std::vector<int> targetDispls,
+              ComplexExchangeGPUType* source, std::vector<int> sourceCount,
+              std::vector<int> sourceDispls, GPUStreamHandle stream)
       : comm_(std::move(comm)),
         target_(target),
         source_(source),
         targetDispls_(std::move(targetDispls)),
         sourceDispls_(std::move(sourceDispls)),
-        sendCount_(std::move(sendCount)),
-        recvCount_(std::move(recvCount)),
+        targetCount_(std::move(targetCount)),
+        sourceCount_(std::move(sourceCount)),
         stream_(std::move(stream)) {}
 
   auto start(bool nonBlocking) -> void override {
@@ -153,11 +153,11 @@ public:
 
     ncclGroupStart();
     for (SizeType r = 0; r < comm_.size(); ++r) {
-      if (sendCount_[r])
-        nccl_check_status(ncclSend(source_ + sourceDispls_[r], 2 * sendCount_[r], ncclType, r,
+      if (sourceCount_[r])
+        nccl_check_status(ncclSend(source_ + sourceDispls_[r], 2 * sourceCount_[r], ncclType, r,
                                    comm_.get_nccl().get(), stream_.get()));
-      if (recvCount_[r])
-        nccl_check_status(ncclRecv(target_ + targetDispls_[r], 2 * recvCount_[r], ncclType, r,
+      if (targetCount_[r])
+        nccl_check_status(ncclRecv(target_ + targetDispls_[r], 2 * targetCount_[r], ncclType, r,
                                    comm_.get_nccl().get(), stream_.get()));
     }
     ncclGroupEnd();
@@ -171,8 +171,8 @@ private:
   ComplexExchangeGPUType* source_;
   std::vector<int> targetDispls_;
   std::vector<int> sourceDispls_;
-  std::vector<int> sendCount_;
-  std::vector<int> recvCount_;
+  std::vector<int> targetCount_;
+  std::vector<int> sourceCount_;
   GPUStreamHandle stream_;
 };
 #endif
@@ -359,12 +359,11 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
 #ifdef SPFFT_NCCL
     if (!comm_.init_nccl()) throw InternalError();
     exchangeBackward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeNCCL>(
-        comm_, spaceDomainBufferGPU_.data(), freqDomainBufferGPU_.data(), freqDomainDispls,
-        spaceDomainDispls, freqDomainCount, spaceDomainCount, stream_);
-
+        comm_, spaceDomainBufferGPU_.data(), spaceDomainCount, spaceDomainDispls,
+        freqDomainBufferGPU_.data(), freqDomainCount, freqDomainDispls, stream_);
     exchangeForward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeNCCL>(
-        comm_, freqDomainBufferGPU_.data(), spaceDomainBufferGPU_.data(), spaceDomainDispls,
-        freqDomainDispls, spaceDomainCount, freqDomainCount, stream_);
+        comm_, freqDomainBufferGPU_.data(), freqDomainCount, freqDomainDispls,
+        spaceDomainBufferGPU_.data(), spaceDomainCount, spaceDomainDispls, stream_);
 #else
     throw InternalError();
 #endif
@@ -392,9 +391,9 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
     exchangeBackward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeMPI>(
         comm_, spacePtr, spaceDomainCount, spaceDomainDispls, freqPtr, freqDomainCount,
         freqDomainDispls, stream_);
-    exchangeForward_ =
-        std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeMPI>(comm_, freqPtr, freqDomainCount, freqDomainDispls,
-                                            spacePtr, spaceDomainCount, spaceDomainDispls, stream_);
+    exchangeForward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeMPI>(
+        comm_, freqPtr, freqDomainCount, freqDomainDispls, spacePtr, spaceDomainCount,
+        spaceDomainDispls, stream_);
   }
 }
 
