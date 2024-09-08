@@ -265,31 +265,23 @@ static auto param_type_names(
   return name;
 }
 
-INSTANTIATE_TEST_SUITE_P(MPI, TransposeGPUTest,
-                         ::testing::Values(
-                           std::make_tuple(SPFFT_EXCH_BUFFERED,
-                                                           SPFFT_EXCH_BACKEND_MPI_HOST),
-                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
-                                                           SPFFT_EXCH_BACKEND_MPI_HOST),
-                           std::make_tuple(SPFFT_EXCH_UNBUFFERED,
-                                                           SPFFT_EXCH_BACKEND_MPI_HOST),
-
-                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
-                                                           SPFFT_EXCH_BACKEND_IPC),
-
+INSTANTIATE_TEST_SUITE_P(
+    MPI, TransposeGPUTest,
+    ::testing::Values(
 #ifdef SPFFT_GPU_DIRECT
-                           std::make_tuple(SPFFT_EXCH_BUFFERED,
-                                                           SPFFT_EXCH_BACKEND_MPI_GPU),
-                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
-                                                           SPFFT_EXCH_BACKEND_MPI_GPU),
+        std::make_tuple(SPFFT_EXCH_BUFFERED, SPFFT_EXCH_BACKEND_MPI_GPU),
+        std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_MPI_GPU),
 #endif
 
 #ifdef SPFFT_NCCL
-                           std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED,
-                                                           SPFFT_EXCH_BACKEND_NCCL)
+        std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_NCCL),
 #endif
-                           ),
-                         param_type_names
+        std::make_tuple(SPFFT_EXCH_BUFFERED, SPFFT_EXCH_BACKEND_MPI_HOST),
+        std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_MPI_HOST),
+        std::make_tuple(SPFFT_EXCH_UNBUFFERED, SPFFT_EXCH_BACKEND_MPI_HOST),
+
+        std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_IPC)),
+    param_type_names
 
 );
 
