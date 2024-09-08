@@ -56,13 +56,13 @@ template <typename T, typename U>
 class TransposeMPICompactBufferedGPU : public Transpose {
   static_assert(IsFloatOrDouble<T>::value, "Type T must be float or double");
 
+public:
   using ValueType = T;
   using ComplexType = std::complex<T>;
   using ComplexExchangeType = std::complex<U>;
   using ComplexGPUType = typename gpu::fft::ComplexType<T>::type;
   using ComplexExchangeGPUType = typename gpu::fft::ComplexType<U>::type;
 
-public:
   // spaceDomainDataGPU and freqDomainDataGPU must NOT overlap
   // spaceDomainDataGPU and spaceDomainBufferGPU must NOT overlap
   // freqDomainDataGPU and freqDomainBufferGPU must NOT overlap
@@ -99,10 +99,6 @@ private:
   MPIDatatypeHandle mpiTypeHandle_;
   MPICommunicatorHandle comm_;
   MPIRequestHandle mpiRequest_;
-  std::vector<int> spaceDomainDispls_;
-  std::vector<int> freqDomainDispls_;
-  std::vector<int> spaceDomainCount_;
-  std::vector<int> freqDomainCount_;
 
   HostArrayView1D<ComplexExchangeType> spaceDomainBufferHost_;
   HostArrayView1D<ComplexExchangeType> freqDomainBufferHost_;
@@ -117,15 +113,23 @@ private:
   GPUArray<int> xyPlaneOffsetsGPU_;
   GPUArray<int> indicesGPU_;
 
-  // IPC
-  std::vector<GPUEventHandle> remoteEvents_;
-  std::vector<GPUMemView<ComplexExchangeGPUType>> remoteFreqDomainGPU_;
-  std::vector<GPUMemView<ComplexExchangeGPUType>> remoteSpaceDomainGPU_;
-  std::vector<int> remoteSpaceDomainDispls_;
-  std::vector<int> remoteFreqDomainDispls_;
+  class ExchangeImpl {
+  public:
+    virtual auto start(bool nonBlocking) -> void {}
+    virtual auto finalize() -> void {}
 
-  std::unique_ptr<Exchange<ComplexExchangeGPUType>> exchangeForward_;
-  std::unique_ptr<Exchange<ComplexExchangeGPUType>> exchangeBackward_;
+    virtual ~ExchangeImpl() = default;
+  };
+
+  std::unique_ptr<ExchangeImpl> exchangeForward_;
+  std::unique_ptr<ExchangeImpl> exchangeBackward_;
+
+  // exchange impl
+  class ExchangeIPC;
+  class ExchangeMPI;
+#ifdef SPFFT_NCCL
+  class ExchangeNCCL;
+#endif
 };
 
 }  // namespace spfft

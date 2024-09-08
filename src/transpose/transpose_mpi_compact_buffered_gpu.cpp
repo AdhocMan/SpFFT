@@ -57,12 +57,15 @@
 
 namespace spfft {
 
-namespace {
-
-template <typename T>
-class ExchangeIPC : public Exchange<T> {
+template <typename T, typename U>
+class TransposeMPICompactBufferedGPU<T, U>::ExchangeIPC
+    : public TransposeMPICompactBufferedGPU<T, U>::ExchangeImpl {
 public:
-  ExchangeIPC(MPICommunicatorHandle comm, T* target, T* source, std::vector<int> localTargetDispls,
+  using ComplexExchangeGPUType =
+      typename TransposeMPICompactBufferedGPU<T, U>::ComplexExchangeGPUType;
+
+  ExchangeIPC(MPICommunicatorHandle comm, ComplexExchangeGPUType* target,
+              ComplexExchangeGPUType* source, std::vector<int> localTargetDispls,
               const std::vector<int>& localSourceDispls, std::vector<int> count,
               GPUStreamHandle stream)
       : comm_(std::move(comm)),
@@ -99,9 +102,10 @@ public:
     for (SizeType i = comm_.rank(); i < comm_.rank() + comm_.size(); ++i) {
       const auto r = i % comm_.size();
       if (count_[r]) {
-        gpu::check_status(gpu::memcpy_async(
-            target_ + localTargetDispls_[r], sourceViews_[r].get() + remoteSourceDispls_[r],
-            count_[r] * sizeof(T), gpu::flag::MemcpyDeviceToDevice, stream_.get()));
+        gpu::check_status(gpu::memcpy_async(target_ + localTargetDispls_[r],
+                                            sourceViews_[r].get() + remoteSourceDispls_[r],
+                                            count_[r] * sizeof(ComplexExchangeGPUType),
+                                            gpu::flag::MemcpyDeviceToDevice, stream_.get()));
       }
     }
   }
@@ -113,27 +117,27 @@ public:
 
 private:
   MPICommunicatorHandle comm_;
-  T* target_;
-  std::vector<GPUMemView<T>> sourceViews_;
+  ComplexExchangeGPUType* target_;
+  std::vector<GPUMemView<ComplexExchangeGPUType>> sourceViews_;
   std::vector<int> localTargetDispls_;
   std::vector<int> remoteSourceDispls_;
   std::vector<int> count_;
   GPUStreamHandle stream_;
 };
 
-
 #ifdef SPFFT_NCCL
-template <typename T>
-class ExchangeNCCL : public Exchange<T> {
+template <typename T, typename U>
+class TransposeMPICompactBufferedGPU<T, U>::ExchangeNCCL
+    : public TransposeMPICompactBufferedGPU<T, U>::ExchangeImpl {
 public:
-  static_assert(std::is_same_v<T, gpu::fft::ComplexType<float>::type> ||
-                std::is_same_v<T, gpu::fft::ComplexType<double>::type>);
+  using ComplexExchangeGPUType =
+      typename TransposeMPICompactBufferedGPU<T, U>::ComplexExchangeGPUType;
 
-  ExchangeNCCL(MPICommunicatorHandle comm, T* target, T* source, std::vector<int> targetDispls,
+  ExchangeNCCL(MPICommunicatorHandle comm, ComplexExchangeGPUType* target,
+               ComplexExchangeGPUType* source, std::vector<int> targetDispls,
                std::vector<int> sourceDispls, std::vector<int> sendCount,
                std::vector<int> recvCount, GPUStreamHandle stream)
-      :
-        comm_(std::move(comm)),
+      : comm_(std::move(comm)),
         target_(target),
         source_(source),
         targetDispls_(std::move(targetDispls)),
@@ -144,7 +148,8 @@ public:
 
   auto start(bool nonBlocking) -> void override {
     auto ncclType = ncclFloat64;
-    if (std::is_same_v<T, gpu::fft::ComplexType<float>::type>) ncclType = ncclFloat32;
+    if (std::is_same_v<ComplexExchangeGPUType, gpu::fft::ComplexType<float>::type>)
+      ncclType = ncclFloat32;
 
     ncclGroupStart();
     for (SizeType r = 0; r < comm_.size(); ++r) {
@@ -162,8 +167,8 @@ public:
 
 private:
   MPICommunicatorHandle comm_;
-  T* target_;
-  T* source_;
+  ComplexExchangeGPUType* target_;
+  ComplexExchangeGPUType* source_;
   std::vector<int> targetDispls_;
   std::vector<int> sourceDispls_;
   std::vector<int> sendCount_;
@@ -172,14 +177,16 @@ private:
 };
 #endif
 
-template <typename T>
-class ExchangeMPI : public Exchange<T> {
+template <typename T, typename U>
+class TransposeMPICompactBufferedGPU<T, U>::ExchangeMPI
+    : public TransposeMPICompactBufferedGPU<T, U>::ExchangeImpl {
 public:
-  static_assert(std::is_same_v<T, gpu::fft::ComplexType<float>::type> ||
-                std::is_same_v<T, gpu::fft::ComplexType<double>::type>);
+  using ComplexExchangeGPUType =
+      typename TransposeMPICompactBufferedGPU<T, U>::ComplexExchangeGPUType;
 
-  ExchangeMPI(MPICommunicatorHandle comm, T* target, std::vector<int> targetCount,
-              std::vector<int> targetDispls, T* source, std::vector<int> sourceCount,
+  ExchangeMPI(MPICommunicatorHandle comm, ComplexExchangeGPUType* target,
+              std::vector<int> targetCount, std::vector<int> targetDispls,
+              ComplexExchangeGPUType* source, std::vector<int> sourceCount,
               std::vector<int> sourceDispls, GPUStreamHandle stream)
       : comm_(std::move(comm)),
         target_(target),
@@ -189,7 +196,7 @@ public:
         targetCount_(std::move(targetCount)),
         sourceCount_(std::move(sourceCount)),
         stream_(std::move(stream)) {
-    if (std::is_same_v<T, gpu::fft::ComplexType<float>::type>)
+    if (std::is_same_v<ComplexExchangeGPUType, gpu::fft::ComplexType<float>::type>)
       type_ = MPIDatatypeHandle::create_contiguous(2, MPIMatchElementaryType<float>::get());
     else
       type_ = MPIDatatypeHandle::create_contiguous(2, MPIMatchElementaryType<double>::get());
@@ -199,9 +206,10 @@ public:
     gpu::check_status(gpu::stream_synchronize(stream_.get()));
 
     if (nonBlocking) {
-      mpi_check_status(MPI_Ialltoallv(source_, sourceCount_.data(), sourceDispls_.data(), type_.get(),
-                                      target_, targetCount_.data(), targetDispls_.data(), type_.get(),
-                                      comm_.get(), mpiRequest_.get_and_activate()));
+      mpi_check_status(MPI_Ialltoallv(source_, sourceCount_.data(), sourceDispls_.data(),
+                                      type_.get(), target_, targetCount_.data(),
+                                      targetDispls_.data(), type_.get(), comm_.get(),
+                                      mpiRequest_.get_and_activate()));
     } else {
       mpi_check_status(MPI_Alltoallv(source_, sourceCount_.data(), sourceDispls_.data(),
                                      type_.get(), target_, targetCount_.data(),
@@ -213,8 +221,8 @@ public:
 
 private:
   MPICommunicatorHandle comm_;
-  T* target_;
-  T* source_;
+  ComplexExchangeGPUType* target_;
+  ComplexExchangeGPUType* source_;
   std::vector<int> targetDispls_;
   std::vector<int> sourceDispls_;
   std::vector<int> targetCount_;
@@ -223,9 +231,6 @@ private:
   MPIRequestHandle mpiRequest_;
   MPIDatatypeHandle type_;
 };
-
-
-}  // namespace
 
 template <typename T, typename U>
 TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
@@ -298,28 +303,28 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
   mpiTypeHandle_ = MPIDatatypeHandle::create_contiguous(2, MPIMatchElementaryType<U>::get());
 
   // prepare mpi parameters
-  spaceDomainCount_.resize(comm_.size());
-  freqDomainCount_.resize(comm_.size());
+  std::vector<int> spaceDomainCount(comm_.size());
+  std::vector<int> freqDomainCount(comm_.size());
   const SizeType numLocalZSticks = param_->num_z_sticks(comm_.rank());
   const SizeType numLocalXYPlanes = param_->num_xy_planes(comm_.rank());
   for (SizeType r = 0; r < (SizeType)comm_.size(); ++r) {
-    freqDomainCount_[r] = numLocalZSticks * param_->num_xy_planes(r);
-    spaceDomainCount_[r] = param_->num_z_sticks(r) * numLocalXYPlanes;
+    freqDomainCount[r] = numLocalZSticks * param_->num_xy_planes(r);
+    spaceDomainCount[r] = param_->num_z_sticks(r) * numLocalXYPlanes;
   }
 
-  spaceDomainDispls_.resize(comm_.size());
-  freqDomainDispls_.resize(comm_.size());
+  std::vector<int> spaceDomainDispls(comm_.size());
+  std::vector<int> freqDomainDispls(comm_.size());
   int currentFreqDomainDispls = 0;
   int currentSpaceDomainDispls = 0;
   for (SizeType r = 0; r < (SizeType)comm_.size(); ++r) {
-    assert(currentSpaceDomainDispls + spaceDomainCount_[r] <=
+    assert(currentSpaceDomainDispls + spaceDomainCount[r] <=
            static_cast<int>(spaceDomainBufferHost.size()));
-    assert(currentFreqDomainDispls + freqDomainCount_[r] <=
+    assert(currentFreqDomainDispls + freqDomainCount[r] <=
            static_cast<int>(freqDomainBufferHost.size()));
-    spaceDomainDispls_[r] = currentSpaceDomainDispls;
-    freqDomainDispls_[r] = currentFreqDomainDispls;
-    currentSpaceDomainDispls += spaceDomainCount_[r];
-    currentFreqDomainDispls += freqDomainCount_[r];
+    spaceDomainDispls[r] = currentSpaceDomainDispls;
+    freqDomainDispls[r] = currentFreqDomainDispls;
+    currentSpaceDomainDispls += spaceDomainCount[r];
+    currentFreqDomainDispls += freqDomainCount[r];
   }
 
   // copy relevant parameters to gpu
@@ -350,31 +355,29 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
   copy_to_gpu(xyPlaneOffsetsHost, xyPlaneOffsetsGPU_);
   copy_to_gpu(indicesHost, indicesGPU_);
 
-
   if (exchBackend_ == SPFFT_EXCH_BACKEND_NCCL) {
 #ifdef SPFFT_NCCL
     if (!comm_.init_nccl()) throw InternalError();
-    exchangeBackward_ = std::make_unique<ExchangeNCCL<ComplexExchangeGPUType>>(
-        comm_, spaceDomainBufferGPU_.data(), freqDomainBufferGPU_.data(), freqDomainDispls_,
-        spaceDomainDispls_, freqDomainCount_, spaceDomainCount_, stream_);
+    exchangeBackward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeNCCL>(
+        comm_, spaceDomainBufferGPU_.data(), freqDomainBufferGPU_.data(), freqDomainDispls,
+        spaceDomainDispls, freqDomainCount, spaceDomainCount, stream_);
 
-    exchangeForward_ = std::make_unique<ExchangeNCCL<ComplexExchangeGPUType>>(
-        comm_, freqDomainBufferGPU_.data(), spaceDomainBufferGPU_.data(), spaceDomainDispls_,
-        freqDomainDispls_, spaceDomainCount_, freqDomainCount_, stream_);
+    exchangeForward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeNCCL>(
+        comm_, freqDomainBufferGPU_.data(), spaceDomainBufferGPU_.data(), spaceDomainDispls,
+        freqDomainDispls, spaceDomainCount, freqDomainCount, stream_);
 #else
     throw InternalError();
 #endif
   }
 
   if (exchBackend_ == SPFFT_EXCH_BACKEND_IPC) {
-    exchangeBackward_ = std::make_unique<ExchangeIPC<ComplexExchangeGPUType>>(
-        comm_, spaceDomainBufferGPU_.data(), freqDomainBufferGPU_.data(), spaceDomainDispls_,
-        freqDomainDispls_, spaceDomainCount_, stream_);
-    exchangeForward_ = std::make_unique<ExchangeIPC<ComplexExchangeGPUType>>(
-        comm_, freqDomainBufferGPU_.data(), spaceDomainBufferGPU_.data(), freqDomainDispls_,
-        spaceDomainDispls_, freqDomainCount_, stream_);
+    exchangeBackward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeIPC>(
+        comm_, spaceDomainBufferGPU_.data(), freqDomainBufferGPU_.data(), spaceDomainDispls,
+        freqDomainDispls, spaceDomainCount, stream_);
+    exchangeForward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeIPC>(
+        comm_, freqDomainBufferGPU_.data(), spaceDomainBufferGPU_.data(), freqDomainDispls,
+        spaceDomainDispls, freqDomainCount, stream_);
   }
-
 
   if (exchBackend_ == SPFFT_EXCH_BACKEND_MPI_HOST || exchBackend_ == SPFFT_EXCH_BACKEND_MPI_GPU) {
     ComplexExchangeGPUType* freqPtr =
@@ -386,12 +389,12 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
       spacePtr = spaceDomainBufferGPU_.data();
     }
 
-    exchangeBackward_ = std::make_unique<ExchangeMPI<ComplexExchangeGPUType>>(
-        comm_, spacePtr, spaceDomainCount_, spaceDomainDispls_, freqPtr, freqDomainCount_,
-        freqDomainDispls_, stream_);
-    exchangeForward_ = std::make_unique<ExchangeMPI<ComplexExchangeGPUType>>(
-        comm_, freqPtr, freqDomainCount_, freqDomainDispls_, spacePtr, spaceDomainCount_,
-        spaceDomainDispls_, stream_);
+    exchangeBackward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeMPI>(
+        comm_, spacePtr, spaceDomainCount, spaceDomainDispls, freqPtr, freqDomainCount,
+        freqDomainDispls, stream_);
+    exchangeForward_ =
+        std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeMPI>(comm_, freqPtr, freqDomainCount, freqDomainDispls,
+                                            spacePtr, spaceDomainCount, spaceDomainDispls, stream_);
   }
 }
 
