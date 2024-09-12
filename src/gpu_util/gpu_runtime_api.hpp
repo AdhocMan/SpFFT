@@ -52,7 +52,6 @@ using StatusType = GPU_PREFIX(Error_t);
 using StreamType = GPU_PREFIX(Stream_t);
 using EventType = GPU_PREFIX(Event_t);
 using IpcMemHandle = GPU_PREFIX(IpcMemHandle_t);
-using IpcEventHandle = GPU_PREFIX(IpcEventHandle_t);
 
 #ifdef SPFFT_CUDA
 using PointerAttributes = GPU_PREFIX(PointerAttributes);
@@ -232,16 +231,6 @@ inline auto pointer_get_attributes(ARGS&&... args) -> StatusType {
 template <typename... ARGS>
 inline auto device_get_pcibusid(ARGS&&... args) -> StatusType {
   return GPU_PREFIX(DeviceGetPCIBusId)(std::forward<ARGS>(args)...);
-}
-
-template <typename... ARGS>
-inline auto ipc_get_event_handle(ARGS&&... args) -> StatusType {
-  return GPU_PREFIX(IpcGetEventHandle)(std::forward<ARGS>(args)...);
-}
-
-template <typename... ARGS>
-inline auto ipc_open_event_handle(ARGS&&... args) -> StatusType {
-  return GPU_PREFIX(IpcOpenEventHandle)(std::forward<ARGS>(args)...);
 }
 
 template <typename... ARGS>
