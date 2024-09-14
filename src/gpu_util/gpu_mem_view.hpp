@@ -39,6 +39,7 @@ namespace spfft {
 template<typename T>
 class GPUMemView {
 public:
+#ifdef SPFFT_GPU_P2P
   explicit GPUMemView(const gpu::IpcMemHandle& handle) {
     void* remotePtr;
     gpu::check_status(
@@ -47,6 +48,7 @@ public:
     ptr_ = std::shared_ptr<T>(static_cast<T*>(remotePtr),
                               [](T* ptr) { std::ignore = gpu::ipc_close_mem_handle(ptr); });
   };
+#endif
 
   explicit GPUMemView(T* ptr) {
     ptr_ = std::shared_ptr<T>(ptr, [](T*) {});

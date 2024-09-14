@@ -134,9 +134,9 @@ enum SpfftExchangeBackend {
    */
   SPFFT_EXCH_BACKEND_NCCL,
   /**
-   * Exchange using IPC with GPU memory
+   * Exchange using P2P with GPU memory
    */
-  SPFFT_EXCH_BACKEND_IPC
+  SPFFT_EXCH_BACKEND_P2P
 };
 
 #ifndef __cplusplus

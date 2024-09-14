@@ -40,6 +40,7 @@
 #cmakedefine SPFFT_SINGLE_PRECISION
 #cmakedefine SPFFT_GPU_DIRECT
 #cmakedefine SPFFT_NCCL
+#cmakedefine SPFFT_GPU_P2P
 
 #include "spfft/spfft_export.h"
 

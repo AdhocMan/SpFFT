@@ -42,6 +42,7 @@
 
 namespace spfft {
 
+#ifdef SPFFT_GPU_P2P
   inline auto gpu_ipc_available(const MPICommunicatorHandle& comm) -> bool {
     GPUArray<double> localArray(1);
 
@@ -79,6 +80,7 @@ namespace spfft {
 
     return available;
   }
+#endif
 
 }  // namespace spfft
 

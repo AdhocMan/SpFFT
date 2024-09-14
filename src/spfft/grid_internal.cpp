@@ -231,14 +231,21 @@ GridInternal<T>::GridInternal(int maxDimX, int maxDimY, int maxDimZ, int maxNumL
     fftWorkBuffer_.reset(new GPUArray<char>());
 
     // check availble gpu exchange backends
+    bool ipcAvailable = false;
+#ifdef SPFFT_GPU_P2P
     if(stopo_.numNodes == 1 && gpu_ipc_available(comm_)) {
-      exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_IPC);
+      ipcAvailable = true;
+      exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_P2P);
     }
+#endif
+
 #ifdef SPFFT_NCCL
-    if(stopo_.numDevices == comm_.size() && comm_.init_nccl()) {
+    // NCCL requires single MPI rank per GPU. Only use, if ipc not available.
+    if (!ipcAvailable && stopo_.numDevices == comm_.size() && comm_.init_nccl()) {
       exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_NCCL);
     }
 #endif
+
 #ifdef SPFFT_GPU_DIRECT
     exchangeBackends_.emplace_back(SPFFT_EXCH_BACKEND_MPI_GPU);
 #endif

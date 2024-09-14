@@ -91,10 +91,6 @@ SpFFT uses MPI and optionally the Nvidia NCCL library for communication. It also
 
 The option `SPFFT_EXCH_DEFAULT` is equivalent to `SPFFT_EXCH_COMPACT_BUFFERED`, which usually provides the best performance if type conversion for communication is not desired.
 
-### NCCL
-
-
-
 
 
 ## Examples

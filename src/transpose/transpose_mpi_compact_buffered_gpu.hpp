@@ -125,7 +125,7 @@ private:
   std::unique_ptr<ExchangeImpl> exchangeBackward_;
 
   // exchange impl
-  class ExchangeIPC;
+  class ExchangeP2P;
   class ExchangeMPI;
 #ifdef SPFFT_NCCL
   class ExchangeNCCL;

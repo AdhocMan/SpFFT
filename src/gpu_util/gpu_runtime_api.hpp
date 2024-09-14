@@ -233,6 +233,7 @@ inline auto device_get_pcibusid(ARGS&&... args) -> StatusType {
   return GPU_PREFIX(DeviceGetPCIBusId)(std::forward<ARGS>(args)...);
 }
 
+#ifdef SPFFT_GPU_P2P
 template <typename... ARGS>
 inline auto ipc_open_mem_handle(ARGS&&... args) -> StatusType {
   return GPU_PREFIX(IpcOpenMemHandle)(std::forward<ARGS>(args)...);
@@ -247,6 +248,7 @@ template <typename... ARGS>
 inline auto ipc_close_mem_handle(ARGS&&... args) -> StatusType {
   return GPU_PREFIX(IpcCloseMemHandle)(std::forward<ARGS>(args)...);
 }
+#endif
 
 inline auto get_last_error() -> StatusType { return GPU_PREFIX(GetLastError)(); }
 

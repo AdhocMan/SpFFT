@@ -57,14 +57,15 @@
 
 namespace spfft {
 
+#ifdef SPFFT_GPU_P2P
 template <typename T, typename U>
-class TransposeMPICompactBufferedGPU<T, U>::ExchangeIPC
+class TransposeMPICompactBufferedGPU<T, U>::ExchangeP2P
     : public TransposeMPICompactBufferedGPU<T, U>::ExchangeImpl {
 public:
   using ComplexExchangeGPUType =
       typename TransposeMPICompactBufferedGPU<T, U>::ComplexExchangeGPUType;
 
-  ExchangeIPC(MPICommunicatorHandle comm, ComplexExchangeGPUType* target,
+  ExchangeP2P(MPICommunicatorHandle comm, ComplexExchangeGPUType* target,
               ComplexExchangeGPUType* source, std::vector<int> localTargetDispls,
               const std::vector<int>& localSourceDispls, std::vector<int> count,
               GPUStreamHandle stream)
@@ -124,6 +125,7 @@ private:
   std::vector<int> count_;
   GPUStreamHandle stream_;
 };
+#endif
 
 #ifdef SPFFT_NCCL
 template <typename T, typename U>
@@ -283,9 +285,9 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
   }
 
   // set exchange backend
-  if (std::find(exchBackends.begin(), exchBackends.end(), SPFFT_EXCH_BACKEND_IPC) !=
+  if (std::find(exchBackends.begin(), exchBackends.end(), SPFFT_EXCH_BACKEND_P2P) !=
       exchBackends.end()) {
-    exchBackend_ = SPFFT_EXCH_BACKEND_IPC;
+    exchBackend_ = SPFFT_EXCH_BACKEND_P2P;
   } else if (std::find(exchBackends.begin(), exchBackends.end(), SPFFT_EXCH_BACKEND_NCCL) !=
              exchBackends.end()) {
     exchBackend_ = SPFFT_EXCH_BACKEND_NCCL;
@@ -369,13 +371,17 @@ TransposeMPICompactBufferedGPU<T, U>::TransposeMPICompactBufferedGPU(
 #endif
   }
 
-  if (exchBackend_ == SPFFT_EXCH_BACKEND_IPC) {
-    exchangeBackward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeIPC>(
+  if (exchBackend_ == SPFFT_EXCH_BACKEND_P2P) {
+#ifdef SPFFT_GPU_P2P
+    exchangeBackward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeP2P>(
         comm_, spaceDomainBufferGPU_.data(), freqDomainBufferGPU_.data(), spaceDomainDispls,
         freqDomainDispls, spaceDomainCount, stream_);
-    exchangeForward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeIPC>(
+    exchangeForward_ = std::make_unique<TransposeMPICompactBufferedGPU<T, U>::ExchangeP2P>(
         comm_, freqDomainBufferGPU_.data(), spaceDomainBufferGPU_.data(), freqDomainDispls,
         spaceDomainDispls, freqDomainCount, stream_);
+#else
+    throw InternalError();
+#endif
   }
 
   if (exchBackend_ == SPFFT_EXCH_BACKEND_MPI_HOST || exchBackend_ == SPFFT_EXCH_BACKEND_MPI_GPU) {

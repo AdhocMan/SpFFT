@@ -92,8 +92,8 @@ void run_benchmark(const MPICommunicatorHandleWrapper& commWrapper,
     case SPFFT_EXCH_BACKEND_LOCAL:
       exchBackendName = "Local";
       break;
-    case SPFFT_EXCH_BACKEND_IPC:
-      exchBackendName = "IPC";
+    case SPFFT_EXCH_BACKEND_P2P:
+      exchBackendName = "P2P";
       break;
   }
 #ifdef SPFFT_MPI

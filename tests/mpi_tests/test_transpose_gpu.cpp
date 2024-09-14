@@ -140,8 +140,12 @@ protected:
 #endif
     }
 
-    if(exchBackend == SPFFT_EXCH_BACKEND_IPC) {
+    if(exchBackend == SPFFT_EXCH_BACKEND_P2P) {
+#ifdef SPFFT_GPU_P2P
       if (!gpu_ipc_available(comm_)) GTEST_SKIP();
+#else
+      GTEST_SKIP();
+#endif
     }
 
     auto freqXYView = create_3d_view(array2_, 0, paramPtr_->num_xy_planes(comm_.rank()),
@@ -254,8 +258,8 @@ static auto param_type_names(
     case SPFFT_EXCH_BACKEND_NCCL: {
       name += "NCCL";
     } break;
-    case SPFFT_EXCH_BACKEND_IPC: {
-      name += "IPC";
+    case SPFFT_EXCH_BACKEND_P2P: {
+      name += "P2P";
     } break;
     case SPFFT_EXCH_BACKEND_LOCAL: {
       name += "LOCAL";
@@ -276,11 +280,13 @@ INSTANTIATE_TEST_SUITE_P(
 #ifdef SPFFT_NCCL
         std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_NCCL),
 #endif
+
+#ifdef SPFFT_GPU_P2P
+        std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_P2P),
+#endif
         std::make_tuple(SPFFT_EXCH_BUFFERED, SPFFT_EXCH_BACKEND_MPI_HOST),
         std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_MPI_HOST),
-        std::make_tuple(SPFFT_EXCH_UNBUFFERED, SPFFT_EXCH_BACKEND_MPI_HOST),
-
-        std::make_tuple(SPFFT_EXCH_COMPACT_BUFFERED, SPFFT_EXCH_BACKEND_IPC)),
+        std::make_tuple(SPFFT_EXCH_UNBUFFERED, SPFFT_EXCH_BACKEND_MPI_HOST)),
     param_type_names
 
 );
