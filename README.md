@@ -82,7 +82,7 @@ SpFFT uses MPI and optionally the Nvidia NCCL library for communication. It also
 
 
 | Exchange Type                      | MPI Function         | Data Type                            |
-|------------------------------------|---------|------------|--------------------------------------|
+|------------------------------------|----------------------|--------------------------------------|
 | SPFFT_EXCH_BUFFERED                | MPI_Alltoall         | float / double                       |
 | SPFFT_EXCH_BUFFERED_FLOAT          | MPI_Alltoall         | float (with conversion if required)  |
 | SPFFT_EXCH_COMPACT_BUFFERED        | MPI_Alltoallv        | float / double                       |
