@@ -78,7 +78,7 @@ make -j8 install
 
 ## Communication
 
-SpFFT uses MPI and optionally the Nvidia NCCL library for communication. It also provides different ways to pack / unpack data for communication:
+SpFFT uses MPI and optionally other methods on GPU for communication. It also provides different ways to pack / unpack data for communication:
 
 
 | Exchange Type                      | MPI Function         | Data Type                            |
@@ -91,6 +91,19 @@ SpFFT uses MPI and optionally the Nvidia NCCL library for communication. It also
 
 
 The option `SPFFT_EXCH_DEFAULT` is equivalent to `SPFFT_EXCH_COMPACT_BUFFERED`, which usually provides the best performance if type conversion for communication is not desired.
+
+### GPU Communication
+
+
+
+The selection order:
+1. Peer-to-peer exchange if
+    - Compiled with `SPFFT_GPU_P2P`
+    - Single node (no network required)
+2. NCCL if
+    - test
+
+
 
 
 
