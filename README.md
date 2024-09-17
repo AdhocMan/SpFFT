@@ -73,6 +73,8 @@ make -j8 install
 | SPFFT_INSTALL          | ON      | Add library to install target                                |
 | SPFFT_FORTRAN          | OFF     | Build Fortran interface module                               |
 | SPFFT_BUNDLED_LIBS     | ON      | Download required libraries for building tests               |
+| SPFFT_GPU_P2P          | OFF     | Use Peer-To-Peer communication on GPU when possible          |
+| SPFFT_NCCL             | OFF     | Use NCCL for communication on GPU when possible              |
 
 **_NOTE:_**  When compiling with CUDA or ROCM (HIP), the standard `CMAKE_CUDA_ARCHITECTURES` or `CMAKE_HIP_ARCHITECTURES` options should be defined as well. `HIP_HCC_FLAGS` is no longer in use.
 
@@ -94,17 +96,19 @@ The option `SPFFT_EXCH_DEFAULT` is equivalent to `SPFFT_EXCH_COMPACT_BUFFERED`, 
 
 ### GPU Communication
 
+By default, data is copied back to host memory to exchange it with MPI. If MPI implementation supports device memory, SpFFT can be compiled with `SPFFT_GPU_DIRECT` to avoid the data transfer to host memory.
+For the `SPFFT_EXCH_COMPACT_BUFFERED` (equivalent to `SPFFT_EXCH_DEFAULT`), NCCl and peer-to-peer exchange backends are also optionally available. These come with some additional initialization overhead and may affect the time required for all memory allocations through CUDA / HIP if peer access has to be enabled. Therefore, it is strongly adviced to benchmark these backends before deciding to them in production.
 
-
-The selection order:
+The backend selection order for `SPFFT_EXCH_COMPACT_BUFFERED`:
 1. Peer-to-peer exchange if
     - Compiled with `SPFFT_GPU_P2P`
     - Single node (no network required)
 2. NCCL if
-    - test
-
-
-
+    - Compiled with `SPFFT_NCCL`
+    - One process per GPU
+3. MPI using device memory if
+    - Compiled with `SPFFT_GPU_DIRECT`
+4. MPI using host memory
 
 
 ## Examples
