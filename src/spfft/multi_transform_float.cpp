@@ -31,9 +31,9 @@
 #include "spfft/multi_transform_internal.hpp"
 #include "spfft/types.h"
 
+#ifdef SPFFT_SINGLE_PRECISION
 namespace spfft {
 
-#ifdef SPFFT_SINGLE_PRECISION
 
 void multi_transform_forward(int numTransforms, TransformFloat* transforms,
                              const SpfftProcessingUnitType* inputLocations,
@@ -62,7 +62,6 @@ void multi_transform_backward(int numTransforms, TransformFloat* transforms,
                                               outputPointers);
 }
 
-#endif
 
 }  // namespace spfft
 
@@ -128,3 +127,5 @@ SpfftError spfft_float_multi_transform_backward_ptr(int numTransforms,
   return SpfftError::SPFFT_SUCCESS;
 }
 }
+
+#endif
