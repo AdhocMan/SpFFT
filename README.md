@@ -83,11 +83,11 @@ SpFFT uses MPI and optionally the Nvidia NCCL library for communication. It also
 
 | Exchange Type                      | MPI Function         | Data Type                            |
 |------------------------------------|---------|------------|--------------------------------------|
-| SPFFT_EXCH_BUFFERED                | MPI_Alltoall         | float / double                       |
-| SPFFT_EXCH_BUFFERED_FLOAT          | MPI_Alltoall         | float (with conversion if required)  |
-| SPFFT_EXCH_COMPACT_BUFFERED        | MPI_Alltoallv        | float / double                       |
-| SPFFT_EXCH_COMPACT_BUFFERED_FLOAT  | MPI_Alltoallv        | float (with conversion if required)  |
-| SPFFT_EXCH_UNBUFFERED              | MPI_Alltoallw        | float / double                       |
+| SPFFT_EXCH_BUFFERED                | MPI_Alltoall         |   |
+| SPFFT_EXCH_BUFFERED_FLOAT          | MPI_Alltoall         |   |
+| SPFFT_EXCH_COMPACT_BUFFERED        | MPI_Alltoallv        |   |
+| SPFFT_EXCH_COMPACT_BUFFERED_FLOAT  | MPI_Alltoallv        |   |
+| SPFFT_EXCH_UNBUFFERED              | MPI_Alltoallw        |   |
 
 
 The option `SPFFT_EXCH_DEFAULT` is equivalent to `SPFFT_EXCH_COMPACT_BUFFERED`, which usually provides the best performance if type conversion for communication is not desired.
