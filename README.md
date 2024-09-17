@@ -97,7 +97,8 @@ The option `SPFFT_EXCH_DEFAULT` is equivalent to `SPFFT_EXCH_COMPACT_BUFFERED`, 
 ### GPU Communication
 
 By default, data is copied back to host memory to exchange it with MPI. If MPI implementation supports device memory, SpFFT can be compiled with `SPFFT_GPU_DIRECT` to avoid the data transfer to host memory.
-For the `SPFFT_EXCH_COMPACT_BUFFERED` (equivalent to `SPFFT_EXCH_DEFAULT`), NCCl and peer-to-peer exchange backends are also optionally available. These come with some additional initialization overhead and may affect the time required for all memory allocations through CUDA / HIP if peer access has to be enabled. Therefore, it is strongly adviced to benchmark these backends before deciding to them in production.
+
+For the `SPFFT_EXCH_COMPACT_BUFFERED` (equivalent to `SPFFT_EXCH_DEFAULT`) exchange method, NCCl and peer-to-peer exchange backends are also optionally available. These come with some additional initialization overhead and may affect the time required for all memory allocations through CUDA / HIP if peer access has to be enabled. Therefore, it is strongly adviced to benchmark these backends before deciding to use them in production.
 
 The backend selection order for `SPFFT_EXCH_COMPACT_BUFFERED`:
 1. Peer-to-peer exchange if
