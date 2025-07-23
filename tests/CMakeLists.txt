@@ -81,4 +81,9 @@ if(SPFFT_BUILD_TESTS)
 		target_include_directories(run_mpi_tests PRIVATE ${SPFFT_INCLUDE_DIRS} ${SPFFT_EXTERNAL_INCLUDE_DIRS})
 	endif()
 
+
+	add_executable(batch_test programs/batch_test.cpp)
+	target_link_libraries(batch_test PRIVATE spfft_test ${SPFFT_EXTERNAL_LIBS} CLI11::CLI11 nlohmann_json::nlohmann_json)
+	target_include_directories(batch_test PRIVATE ${SPFFT_INCLUDE_DIRS} ${SPFFT_EXTERNAL_INCLUDE_DIRS})
+
 endif()
