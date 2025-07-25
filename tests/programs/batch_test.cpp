@@ -6,18 +6,26 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <thread>
 #include <vector>
+
+#include "compression/compression_gpu.hpp"
+#include "compression/compression_host.hpp"
+#include "fft/transform_1d_gpu.hpp"
 #include "fft/transform_1d_host.hpp"
+#include "fft/transform_2d_gpu.hpp"
+#include "fft/transform_real_2d_gpu.hpp"
 #include "memory/array_view_utility.hpp"
 #include "memory/host_array.hpp"
+#include "parameters/parameters.hpp"
 #include "spfft/config.h"
 #include "spfft/spfft.hpp"
 #include "timing/timing.hpp"
-#include "compression/compression_host.hpp"
+#include "transpose/transpose.hpp"
+#include "transpose/transpose_gpu.hpp"
 #include "util/omp_definitions.hpp"
-#include "parameters/parameters.hpp"
 
 #if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
 #include "gpu_util/gpu_runtime_api.hpp"
@@ -63,6 +71,64 @@ std::vector<int> generate_spherical_indices(int dimX, int dimY, int dimZ,int rad
 }
 
 
+class BatchTransform {
+  public:
+    BatchTransform(int dimX, int dimY, int dimZ, int nIndices, const int* indices) {
+      fftWorkBuffer_.reset(new GPUArray<char>());
+      param_ = std::make_shared<Parameters>(SPFFT_TRANS_C2C, dimX, dimY, dimZ, nIndices,
+                                            SPFFT_INDEX_TRIPLETS, indices);
+
+      gpuArray1_ = GPUArray<typename gpu::fft::ComplexType<double>::type>(
+          static_cast<SizeType>(param_->dim_x() * param_->dim_y() * param_->dim_z()));
+      gpuArray2_ = GPUArray<typename gpu::fft::ComplexType<double>::type>(
+          static_cast<SizeType>(param_->dim_x() * param_->dim_y() * param_->dim_z()));
+
+      const SizeType numLocalZSticks = param_->num_z_sticks(0);
+
+      freqDomainDataGPU_ = create_2d_view(gpuArray1_, 0, numLocalZSticks, param_->dim_z());
+
+      compression_.reset(new CompressionGPU(param_));
+
+      transformZ_ = std::unique_ptr<TransformGPU>(
+          new Transform1DGPU<double>(freqDomainDataGPU_, stream_, fftWorkBuffer_));
+
+      freqDomainXYGPU_ =
+          create_3d_view(gpuArray2_, 0, param_->dim_z(), param_->dim_y(),
+                         param_->dim_x_freq());  // must not overlap with z-sticks
+      transpose_.reset(
+          new TransposeGPU<double>(param_, stream_, freqDomainXYGPU_, freqDomainDataGPU_));
+
+      transformXY_ = std::unique_ptr<TransformGPU>(
+          new Transform2DGPU<double>(freqDomainXYGPU_, stream_, fftWorkBuffer_));
+    }
+
+
+    void backward(const double* input, double* output) {
+      compression_->decompress(stream_, input, freqDomainDataGPU_);
+      transformZ_->backward();
+      transpose_->backward();
+      transformXY_->backward(freqDomainXYGPU_.data(), output);
+    }
+
+  private:
+    GPUStreamHandle stream_ = GPUStreamHandle(0);
+    GPUArray<typename gpu::fft::ComplexType<double>::type> gpuArray1_;
+    GPUArray<typename gpu::fft::ComplexType<double>::type> gpuArray2_;
+    std::shared_ptr<GPUArray<char>> fftWorkBuffer_;
+
+    std::shared_ptr<Parameters> param_;
+
+    std::unique_ptr<TransformGPU> transformZ_;
+    std::unique_ptr<Transpose> transpose_;
+    std::unique_ptr<TransformGPU> transformXY_;
+    std::unique_ptr<CompressionGPU> compression_;
+
+    GPUArrayView2D<typename gpu::fft::ComplexType<double>::type> freqDomainDataGPU_;
+    GPUArrayView1D<double> freqDomainCompressedDataGPU_;
+    GPUArrayView3D<typename gpu::fft::ComplexType<double>::type> freqDomainXYGPU_;
+};
+
+
 
 void transform_batch(int batchsize, int dimX, int dimY, int dimZ,int radius, const double* input, double* output) {
 
@@ -100,9 +166,59 @@ int main(int argc, char** argv) {
 
   int batchsize = 1;
 
-  std::vector<double> input(2 * dimX * dimY * dimZ);
-  std::vector<double> output(2 * dimX * dimY * dimZ);
+  auto indices = generate_spherical_indices(dimX, dimY, dimZ, radius);
+  auto nIndices = indices.size() / 3;
 
-  transform_batch(batchsize, dimX, dimY, dimZ, radius, input.data(), output.data());
+  std::vector<double> input(batchsize * 2 * nIndices);
+  std::vector<double> output(batchsize * 2 * dimX * dimY * dimZ);
+  std::vector<double> outputRef(batchsize * 2 * dimX * dimY * dimZ);
+
+
+  std::minstd_rand randGen(42);
+  std::uniform_real_distribution<double> dist(0.1, 1.0);
+
+  for(auto& val : input) {
+    val = dist(randGen);
+  }
+
+
+  GPUStreamHandle stream = GPUStreamHandle(0);
+
+  BatchTransform bt(dimX, dimY, dimZ, nIndices, indices.data());
+  Transform transform(1, SPFFT_PU_GPU, SPFFT_TRANS_C2C, dimX, dimY, dimZ, nIndices, SPFFT_INDEX_TRIPLETS, indices.data());
+
+  GPUArray<double> gpuInput(input.size());
+  GPUArray<double> gpuOutput(output.size());
+  GPUArray<double> gpuOutputRef(output.size());
+
+  gpu::check_status(gpu::memcpy_async(gpuInput.data(), input.data(), input.size() * sizeof(double),
+                                      gpu::flag::MemcpyHostToDevice, stream.get()));
+
+  gpu::check_status(gpu::stream_synchronize(stream.get()));
+
+
+  bt.backward(gpuInput.data(), gpuOutput.data());
+
+  transform.backward(gpuInput.data(), gpuOutputRef.data());
+
+
+
+  gpu::check_status(gpu::stream_synchronize(stream.get()));
+  gpu::check_status(gpu::memcpy_async(output.data(), gpuOutput.data(),
+                                      output.size() * sizeof(double), gpu::flag::MemcpyDeviceToHost,
+                                      stream.get()));
+  gpu::check_status(gpu::memcpy_async(outputRef.data(), gpuOutputRef.data(),
+                                      output.size() * sizeof(double), gpu::flag::MemcpyDeviceToHost,
+                                      stream.get()));
+  gpu::check_status(gpu::stream_synchronize(stream.get()));
+
+
+  // compare
+
+  for(std::size_t i = 0; i < output.size(); ++i) {
+    if(std::abs(output[i] - outputRef[i]) > 0.0001) {
+      std::cout << "Error: output = " << output[i] << ", ref = " << outputRef[i] << std::endl;
+    }
+  }
 
 }
