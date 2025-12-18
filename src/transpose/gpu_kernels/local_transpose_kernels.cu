@@ -93,6 +93,57 @@ auto local_transpose_backward(
                     spaceDomain.dim_mid() * spaceDomain.dim_inner(), spaceDomain.device_id()));
 }
 
+template <typename T>
+__global__ static void transpose_backward_batched_kernel(const GPUArrayConstView1D<int> indices,
+                                                         const GPUArrayConstView3D<T> freqZData,
+                                                         GPUArrayView3D<T> spaceDomainFlat) {
+  // const int z = threadIdx.x + blockIdx.x * blockDim.x;
+  const int stickIndex = threadIdx.x + blockIdx.x * blockDim.x;
+
+  if (stickIndex < indices.size()) {
+    const auto stickXYIndex = indices(stickIndex);
+    for (int batchIdx = blockIdx.z; batchIdx < freqZData.dim_outer(); batchIdx += gridDim.z) {
+      for (int z = blockIdx.y; z < freqZData.dim_inner(); z += gridDim.y) {
+        spaceDomainFlat(batchIdx, z, stickXYIndex) = freqZData(batchIdx, stickIndex, z);
+      }
+    }
+  }
+}
+
+auto local_transpose_batched_backward(
+    const gpu::StreamType stream, const GPUArrayView1D<int> indices,
+    const GPUArrayView3D<typename gpu::fft::ComplexType<double>::type>& freqZData,
+    GPUArrayView3D<typename gpu::fft::ComplexType<double>::type> spaceDomain, int batchSize) -> void {
+  assert(indices.size() == freqZData.dim_mid());
+  assert(indices.size() <= spaceDomain.dim_inner() * spaceDomain.dim_mid());
+  assert(spaceDomain.dim_outer() == freqZData.dim_inner());
+  const dim3 threadBlock(gpu::BlockSizeSmall);
+  const dim3 threadGrid((freqZData.dim_outer() + threadBlock.x - 1) / threadBlock.x,
+                        std::min(freqZData.dim_inner(), gpu::GridSizeMedium), batchSize);
+  launch_kernel(transpose_backward_batched_kernel<typename gpu::fft::ComplexType<double>::type>, threadGrid,
+                threadBlock, 0, stream, indices, freqZData,
+                GPUArrayView3D<typename gpu::fft::ComplexType<double>::type>(
+                    spaceDomain.data(), batchSize, spaceDomain.dim_outer() / batchSize,
+                    spaceDomain.dim_mid() * spaceDomain.dim_inner(), spaceDomain.device_id()));
+}
+
+auto local_transpose_batched_backward(
+    const gpu::StreamType stream, const GPUArrayView1D<int> indices,
+    const GPUArrayView3D<typename gpu::fft::ComplexType<float>::type>& freqZData,
+    GPUArrayView3D<typename gpu::fft::ComplexType<float>::type> spaceDomain, int batchSize) -> void {
+  assert(indices.size() == freqZData.dim_mid());
+  assert(indices.size() <= spaceDomain.dim_inner() * spaceDomain.dim_mid());
+  assert(spaceDomain.dim_outer() == freqZData.dim_inner());
+  const dim3 threadBlock(gpu::BlockSizeSmall);
+  const dim3 threadGrid((freqZData.dim_outer() + threadBlock.x - 1) / threadBlock.x,
+                        std::min(freqZData.dim_inner(), gpu::GridSizeMedium), batchSize);
+  launch_kernel(transpose_backward_batched_kernel<typename gpu::fft::ComplexType<float>::type>, threadGrid,
+                threadBlock, 0, stream, indices, freqZData,
+                GPUArrayView3D<typename gpu::fft::ComplexType<float>::type>(
+                    spaceDomain.data(), batchSize, spaceDomain.dim_outer() / batchSize,
+                    spaceDomain.dim_mid() * spaceDomain.dim_inner(), spaceDomain.device_id()));
+}
+
 #else
 // kernel optimized for AMD
 // (ideal memory access pattern is different)

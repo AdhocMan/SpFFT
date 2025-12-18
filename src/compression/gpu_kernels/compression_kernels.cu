@@ -78,6 +78,57 @@ auto decompress_gpu(const gpu::StreamType stream, const GPUArrayView1D<int>& ind
                     output.data(), output.size(), output.device_id()));
 }
 
+
+template <typename T>
+__global__ static void decompress_batch_kernel(
+    const GPUArrayConstView1D<int> indices, const T* input,
+    GPUArrayView2D<typename gpu::fft::ComplexType<T>::type> output) {
+  // const int stride = gridDim.x * blockDim.x;
+  for (int batchIdx = blockIdx.y; batchIdx < output.dim_outer(); batchIdx += gridDim.y) {
+    for (int idx = threadIdx.x + blockIdx.x * blockDim.x; idx < indices.size();
+         idx += gridDim.x * blockDim.x) {
+      const int valueIdx = indices(idx);
+      typename gpu::fft::ComplexType<T>::type value;
+      value.x = input[2 * (idx + batchIdx * indices.size())];
+      value.y = input[2 * (idx + batchIdx * indices.size()) + 1];
+      output(batchIdx, valueIdx) = value;
+    }
+  }
+}
+
+auto decompress_batch_gpu(const gpu::StreamType stream, const GPUArrayView1D<int>& indices,
+                    const double* input,
+                    GPUArrayView3D<typename gpu::fft::ComplexType<double>::type> output) -> void {
+  assert(indices.size() <= output.size());
+  const dim3 threadBlock(gpu::BlockSizeMedium);
+  const dim3 threadGrid(
+      std::min(static_cast<int>((indices.size() + threadBlock.x - 1) / threadBlock.x),
+               gpu::GridSizeMedium),
+      output.dim_outer());
+  launch_kernel(decompress_batch_kernel<double>, threadGrid, threadBlock, 0, stream,
+                GPUArrayConstView1D<int>(indices), input,
+                GPUArrayView2D<typename gpu::fft::ComplexType<double>::type>(
+                    output.data(), output.dim_outer(), output.dim_mid() * output.dim_inner(),
+                    output.device_id()));
+}
+
+auto decompress_batch_gpu(const gpu::StreamType stream, const GPUArrayView1D<int>& indices,
+                    const float* input,
+                    GPUArrayView3D<typename gpu::fft::ComplexType<float>::type> output) -> void {
+  assert(indices.size() <= output.size());
+  const dim3 threadBlock(gpu::BlockSizeMedium);
+  const dim3 threadGrid(
+      std::min(static_cast<int>((indices.size() + threadBlock.x - 1) / threadBlock.x),
+               gpu::GridSizeMedium),
+      output.dim_outer());
+  launch_kernel(decompress_batch_kernel<float>, threadGrid, threadBlock, 0, stream,
+                GPUArrayConstView1D<int>(indices), input,
+                GPUArrayView2D<typename gpu::fft::ComplexType<float>::type>(
+                    output.data(), output.dim_outer(), output.dim_mid() * output.dim_inner(),
+                    output.device_id()));
+}
+
+
 template <typename T>
 __global__ static void compress_kernel(
     const GPUArrayConstView1D<int> indices,

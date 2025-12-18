@@ -77,6 +77,16 @@ public:
     decompress_gpu(stream.get(), create_1d_view(indicesGPU_, 0, indicesGPU_.size()), input, output);
   }
 
+  template <typename T>
+  auto decompress_batch(const GPUStreamHandle& stream, const T* input,
+                  GPUArrayView3D<typename gpu::fft::ComplexType<T>::type> output) -> void {
+    static_assert(IsFloatOrDouble<T>::value, "Type T must be float or double");
+    gpu::check_status(gpu::memset_async(
+        static_cast<void*>(output.data()), 0,
+        output.size() * sizeof(typename decltype(output)::ValueType), stream.get()));
+    decompress_batch_gpu(stream.get(), create_1d_view(indicesGPU_, 0, indicesGPU_.size()), input, output);
+  }
+
 private:
   GPUArray<int> indicesGPU_;
 };

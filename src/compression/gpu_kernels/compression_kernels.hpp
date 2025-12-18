@@ -49,6 +49,16 @@ auto compress_gpu(const gpu::StreamType stream, const GPUArrayView1D<int>& indic
                   GPUArrayView2D<typename gpu::fft::ComplexType<float>::type> input, float* output,
                   const bool useScaling, const float scalingFactor) -> void;
 
+auto decompress_batch_gpu(const gpu::StreamType stream, const GPUArrayView1D<int>& indices,
+                          const double* input,
+                          GPUArrayView3D<typename gpu::fft::ComplexType<double>::type> output)
+    -> void;
+
+auto decompress_batch_gpu(const gpu::StreamType stream, const GPUArrayView1D<int>& indices,
+                          const float* input,
+                          GPUArrayView3D<typename gpu::fft::ComplexType<float>::type> output)
+    -> void;
+
 }  // namespace spfft
 
 #endif

@@ -45,6 +45,17 @@ auto local_transpose_backward(
     const GPUArrayView2D<typename gpu::fft::ComplexType<float>::type>& freqZData,
     GPUArrayView3D<typename gpu::fft::ComplexType<float>::type> spaceDomain) -> void;
 
+auto local_transpose_batched_backward(
+    const gpu::StreamType stream, const GPUArrayView1D<int> indices,
+    const GPUArrayView3D<typename gpu::fft::ComplexType<double>::type>& freqZData,
+    GPUArrayView3D<typename gpu::fft::ComplexType<double>::type> spaceDomain, int batchSize) -> void;
+
+
+auto local_transpose_batched_backward(
+    const gpu::StreamType stream, const GPUArrayView1D<int> indices,
+    const GPUArrayView3D<typename gpu::fft::ComplexType<float>::type>& freqZData,
+    GPUArrayView3D<typename gpu::fft::ComplexType<float>::type> spaceDomain, int batchSize) -> void;
+
 // ------------------
 // Forward
 // ------------------
