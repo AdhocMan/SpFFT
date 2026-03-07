@@ -62,6 +62,7 @@ if(SPFFT_BUILD_TESTS)
 		local_tests/test_disjoint.cpp
 		local_tests/test_fftw_prop_hash.cpp
 		local_tests/test_local_transform.cpp
+		local_tests/test_batch_transform.cpp
 		)
 	target_link_libraries(run_local_tests PRIVATE GTest::gtest)
 	target_link_libraries(run_local_tests PRIVATE spfft_test ${SPFFT_EXTERNAL_LIBS})

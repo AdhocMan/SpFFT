@@ -9,6 +9,9 @@ set(SPFFT_SOURCE_FILES
 	spfft/multi_transform.cpp
 	spfft/grid.cpp
 	spfft/grid_internal.cpp
+	spfft/batch_transform.cpp
+	spfft/batch_transform_internal.cpp
+	execution/execution_batch_host.cpp
 	fft/fftw_mutex.cpp
 	)
 
