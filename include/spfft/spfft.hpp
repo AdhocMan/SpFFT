@@ -36,5 +36,6 @@
 #include "spfft/transform.hpp"
 #include "spfft/transform_float.hpp"
 #include "spfft/batch_transform.hpp"
+#include "spfft/batch_transform_float.hpp"
 
 #endif

@@ -20,6 +20,7 @@ if(SPFFT_SINGLE_PRECISION)
 		spfft/transform_float.cpp
 		spfft/multi_transform_float.cpp
 		spfft/grid_float.cpp
+		spfft/batch_transform_float.cpp
 		)
 endif()
 
@@ -27,6 +28,7 @@ set(SPFFT_GPU_KERNELS)
 if(SPFFT_CUDA OR SPFFT_ROCM)
 	list(APPEND SPFFT_GPU_KERNELS
 		transpose/gpu_kernels/local_transpose_kernels.cu
+		transpose/gpu_kernels/local_transpose_batch_kernels.cu
 		compression/gpu_kernels/compression_kernels.cu
 		compression/gpu_kernels/compression_batch_kernels.cu
 		symmetry/gpu_kernels/symmetry_kernels.cu

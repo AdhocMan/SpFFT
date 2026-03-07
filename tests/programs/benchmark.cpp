@@ -37,6 +37,53 @@
 
 using namespace spfft;
 
+void run_batch_benchmark(const SpfftTransformType transformType, const int dimX, const int dimY,
+                         const int dimZ, const SpfftProcessingUnitType executionUnit,
+                         const SpfftProcessingUnitType targetUnit, const int numThreads,
+                         const std::vector<int>& indices, const int numRepeats,
+                         const int numTransforms) {
+  const int numLocalElements = indices.size() / 3;
+  const int freqSize = numLocalElements * 2;  // complex values as doubles
+
+  BatchTransform batchTransform(numThreads, executionUnit, transformType, dimX, dimY, dimZ,
+                                numTransforms, numLocalElements,
+                                SpfftIndexFormatType::SPFFT_INDEX_TRIPLETS, indices.data());
+
+  // allocate frequency domain data for all batches contiguously
+  const std::size_t totalFreqSize = static_cast<std::size_t>(numTransforms) * freqSize;
+  std::vector<double> freqValuesHost;
+  double* freqDataPtr = nullptr;
+
+#if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
+  GPUArray<double> freqValuesGPU;
+  if (targetUnit == SpfftProcessingUnitType::SPFFT_PU_GPU) {
+    freqValuesGPU = GPUArray<double>(totalFreqSize);
+    freqDataPtr = freqValuesGPU.data();
+  } else {
+    freqValuesHost.assign(totalFreqSize, 0.0);
+    freqDataPtr = freqValuesHost.data();
+  }
+#else
+  freqValuesHost.assign(totalFreqSize, 0.0);
+  freqDataPtr = freqValuesHost.data();
+#endif
+
+  // warm up
+  {
+    HOST_TIMING_SCOPED("Warming")
+    batchTransform.backward(freqDataPtr, targetUnit);
+    batchTransform.forward(targetUnit, freqDataPtr);
+  }
+
+  {
+    HOST_TIMING_SCOPED("BatchTransform")
+    for (int repeat = 0; repeat < numRepeats; ++repeat) {
+      batchTransform.backward(freqDataPtr, targetUnit);
+      batchTransform.forward(targetUnit, freqDataPtr);
+    }
+  }
+}
+
 void run_benchmark(const SpfftTransformType transformType, const int dimX, const int dimY,
                    const int dimZ, const int numLocalZSticks, const int numLocalXYPlanes,
                    const SpfftProcessingUnitType executionUnit,
@@ -77,7 +124,7 @@ void run_benchmark(const SpfftTransformType transformType, const int dimX, const
   } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT) {
     exchName = "Compact buffered float";
   } else if (exchangeType == SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT) {
-    exchName = "Buffered float";
+    exchName = "Buffered double";
   }
 
   HOST_TIMING_SCOPED(exchName)
@@ -127,6 +174,7 @@ int main(int argc, char** argv) {
 
   int numRepeats = 1;
   int numTransforms = 1;
+  bool useBatchTransform = false;
   std::string outputFileName;
   std::string exchName;
   std::string procName;
@@ -140,19 +188,25 @@ int main(int argc, char** argv) {
   app.add_option("-r", numRepeats, "Number of repeats")->required();
   app.add_option("-o", outputFileName, "Output file name")->required();
   app.add_option("-m", numTransforms, "Multiple transform number")->default_val("1");
+  app.add_flag("-b,--batch", useBatchTransform,
+               "Use BatchTransform class instead of multiple Transform objects");
   app.add_option("-s", sparsity, "Sparsity");
   app.add_option("-t", transformTypeName, "Transform type")
       ->check(CLI::IsMember({"c2c", "r2c"}))
       ->default_val("c2c");
-  app.add_option("-e", exchName, "Exchange type")
+  app.add_option("-e", exchName, "Exchange type (not required with --batch)")
       ->check(CLI::IsMember(
-          {"all", "compact", "compactFloat", "buffered", "bufferedFloat", "unbuffered"}))
-      ->required();
+          {"all", "compact", "compact", "buffered", "buffered", "unbuffered"}));
   app.add_option("-p", procName,
                  "Processing unit. With gpu-gpu, device memory is used as input and output.")
       ->check(CLI::IsMember({"cpu", "gpu", "gpu-gpu"}))
       ->required();
   CLI11_PARSE(app, argc, argv);
+
+  if (!useBatchTransform && exchName.empty()) {
+    std::cerr << "Error: -e (exchange type) is required when not using --batch" << std::endl;
+    return 1;
+  }
 
   auto transformType = SPFFT_TRANS_C2C;
   if(transformTypeName == "r2c") {
@@ -241,9 +295,15 @@ int main(int argc, char** argv) {
     std::cout << "Sparsity: " << sparsity << std::endl;
     std::cout << "Proc: " << procName << std::endl;
     std::cout << "GPU Direct: " << (gpuDirectEnabled ? "Enabled" : "Disabled") << std::endl;
+    if (useBatchTransform) {
+      std::cout << "Mode: BatchTransform (batch_size=" << numTransforms << ")" << std::endl;
+    }
   }
 
-  if (exchName == "all") {
+  if (useBatchTransform) {
+    run_batch_benchmark(transformType, dimX, dimY, dimZ, executionUnit, targetUnit, numThreads,
+                        xyzIndices, numRepeats, numTransforms);
+  } else if (exchName == "all") {
     run_benchmark(transformType, dimX, dimY, dimZ, numLocalZSticks, numLocalXYPlanes, executionUnit,
                   targetUnit, numThreads, SpfftExchangeType::SPFFT_EXCH_BUFFERED, xyzIndices,
                   numRepeats, numTransforms, freqValuesPointers.data());
@@ -257,11 +317,11 @@ int main(int argc, char** argv) {
     auto exchangeType = SpfftExchangeType::SPFFT_EXCH_DEFAULT;
     if (exchName == "compact") {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED;
-    } else if (exchName == "compactFloat") {
+    } else if (exchName == "compact") {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_COMPACT_BUFFERED_FLOAT;
     } else if (exchName == "buffered") {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_BUFFERED;
-    } else if (exchName == "bufferedFloat") {
+    } else if (exchName == "buffered") {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_BUFFERED_FLOAT;
     } else if (exchName == "unbuffered") {
       exchangeType = SpfftExchangeType::SPFFT_EXCH_UNBUFFERED;

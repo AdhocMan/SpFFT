@@ -13,7 +13,7 @@
 #include "memory/gpu_array_view.hpp"
 #include "parameters/parameters.hpp"
 #include "spfft/config.h"
-#include "transpose/gpu_kernels/local_transpose_kernels.hpp"
+#include "transpose/gpu_kernels/local_transpose_batch_kernels.hpp"
 #include "transpose/transpose.hpp"
 #include "util/common_types.hpp"
 #include "util/type_check.hpp"
@@ -65,17 +65,10 @@ public:
     if (freqDomainData_.size() > 0 && spaceDomainData_.size() > 0) {
       const auto indicesView = create_1d_view(indices_, 0, indices_.size());
       const int xyPlaneSize = spaceDomainData_.dim_mid() * spaceDomainData_.dim_inner();
-      for (SizeType b = 0; b < batchSize_; ++b) {
-        GPUArrayView2D<ComplexType> freqBatch(
-            freqDomainData_.data() + b * numZSticks_ * dimZ_,
-            static_cast<int>(numZSticks_), static_cast<int>(dimZ_),
-            freqDomainData_.device_id());
-        GPUArrayView3D<ComplexType> spaceBatch(
-            spaceDomainData_.data() + b * dimZ_ * xyPlaneSize,
-            static_cast<int>(dimZ_), spaceDomainData_.dim_mid(), spaceDomainData_.dim_inner(),
-            spaceDomainData_.device_id());
-        local_transpose_backward(stream_.get(), indicesView, freqBatch, spaceBatch);
-      }
+      local_transpose_batch_backward(stream_.get(), indicesView, freqDomainData_.data(),
+                                     spaceDomainData_.data(), static_cast<int>(numZSticks_),
+                                     static_cast<int>(dimZ_), xyPlaneSize,
+                                     static_cast<int>(batchSize_));
     }
   }
 
@@ -85,17 +78,10 @@ public:
     if (freqDomainData_.size() > 0 && spaceDomainData_.size() > 0) {
       const auto indicesView = create_1d_view(indices_, 0, indices_.size());
       const int xyPlaneSize = spaceDomainData_.dim_mid() * spaceDomainData_.dim_inner();
-      for (SizeType b = 0; b < batchSize_; ++b) {
-        GPUArrayView3D<ComplexType> spaceBatch(
-            spaceDomainData_.data() + b * dimZ_ * xyPlaneSize,
-            static_cast<int>(dimZ_), spaceDomainData_.dim_mid(), spaceDomainData_.dim_inner(),
-            spaceDomainData_.device_id());
-        GPUArrayView2D<ComplexType> freqBatch(
-            freqDomainData_.data() + b * numZSticks_ * dimZ_,
-            static_cast<int>(numZSticks_), static_cast<int>(dimZ_),
-            freqDomainData_.device_id());
-        local_transpose_forward(stream_.get(), indicesView, spaceBatch, freqBatch);
-      }
+      local_transpose_batch_forward(stream_.get(), indicesView, spaceDomainData_.data(),
+                                    freqDomainData_.data(), static_cast<int>(numZSticks_),
+                                    static_cast<int>(dimZ_), xyPlaneSize,
+                                    static_cast<int>(batchSize_));
     }
   }
 

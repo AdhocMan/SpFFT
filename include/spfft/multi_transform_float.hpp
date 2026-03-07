@@ -25,8 +25,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef SPFFT_MULTI_TRANSFORM_HPP
-#define SPFFT_MULTI_TRANSFORM_HPP
+#ifndef SPFFT_MULTI_TRANSFORM_FLOAT_HPP
+#define SPFFT_MULTI_TRANSFORM_FLOAT_HPP
 
 #include "spfft/config.h"
 #include "spfft/transform_float.hpp"
@@ -100,4 +100,4 @@ SPFFT_EXPORT void multi_transform_backward(int numTransforms, TransformFloat* tr
 
 }  // namespace spfft
 
-#endif
+#endif  // SPFFT_MULTI_TRANSFORM_FLOAT_HPP

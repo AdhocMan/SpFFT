@@ -1,6 +1,7 @@
 #include "spfft/batch_transform_internal.hpp"
 #include "spfft/exceptions.hpp"
 #include "util/omp_definitions.hpp"
+#include "timing/timing.hpp"
 
 namespace spfft {
 
@@ -57,6 +58,7 @@ BatchTransformInternal<T>::BatchTransformInternal(int maxNumThreads,
 template <typename T>
 auto BatchTransformInternal<T>::forward(const T* input, T* output, SpfftScalingType scaling)
     -> void {
+  HOST_TIMING_SCOPED("forward")
   if (processingUnit_ == SPFFT_PU_HOST) {
     execHost_->forward_xy(input);
     execHost_->forward_exchange(false);
@@ -82,6 +84,7 @@ auto BatchTransformInternal<T>::forward(SpfftProcessingUnitType inputLocation, T
 
 template <typename T>
 auto BatchTransformInternal<T>::backward(const T* input, T* output) -> void {
+  HOST_TIMING_SCOPED("backward")
   if (processingUnit_ == SPFFT_PU_HOST) {
     execHost_->backward_z(input);
     execHost_->backward_exchange(false);
