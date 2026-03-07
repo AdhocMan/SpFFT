@@ -5,29 +5,35 @@
 
 namespace spfft {
 
-BatchTransform::BatchTransform(int maxNumThreads, SpfftTransformType transformType, int dimX,
-                               int dimY, int dimZ, int batchSize, int numLocalElements,
+BatchTransform::BatchTransform(int maxNumThreads, SpfftProcessingUnitType processingUnit,
+                               SpfftTransformType transformType, int dimX, int dimY, int dimZ,
+                               int batchSize, int numLocalElements,
                                SpfftIndexFormatType indexFormat, const int* indices) {
-  transform_.reset(new BatchTransformInternal<double>(maxNumThreads, transformType, dimX, dimY, dimZ,
-                                                      batchSize, numLocalElements, indexFormat,
-                                                      indices));
+  transform_.reset(new BatchTransformInternal<double>(maxNumThreads, processingUnit, transformType,
+                                                      dimX, dimY, dimZ, batchSize,
+                                                      numLocalElements, indexFormat, indices));
 }
 
-void BatchTransform::forward(double* output, SpfftScalingType scaling) {
-  transform_->forward(output, scaling);
+void BatchTransform::forward(SpfftProcessingUnitType inputLocation, double* output,
+                              SpfftScalingType scaling) {
+  transform_->forward(inputLocation, output, scaling);
 }
 
 void BatchTransform::forward(const double* input, double* output, SpfftScalingType scaling) {
   transform_->forward(input, output, scaling);
 }
 
-void BatchTransform::backward(const double* input) { transform_->backward(input); }
+void BatchTransform::backward(const double* input, SpfftProcessingUnitType outputLocation) {
+  transform_->backward(input, outputLocation);
+}
 
 void BatchTransform::backward(const double* input, double* output) {
   transform_->backward(input, output);
 }
 
-double* BatchTransform::space_domain_data() { return transform_->space_domain_data(); }
+double* BatchTransform::space_domain_data(SpfftProcessingUnitType processingUnit) {
+  return transform_->space_domain_data(processingUnit);
+}
 
 int BatchTransform::batch_size() const { return transform_->batch_size(); }
 
@@ -43,17 +49,23 @@ SpfftTransformType BatchTransform::type() const { return transform_->type(); }
 
 int BatchTransform::num_threads() const { return transform_->num_threads(); }
 
+SpfftProcessingUnitType BatchTransform::processing_unit() const {
+  return transform_->processing_unit();
+}
+
 }  // namespace spfft
 
 extern "C" {
 
 SpfftError spfft_batch_transform_create(SpfftBatchTransform* transform, int maxNumThreads,
+                                         SpfftProcessingUnitType processingUnit,
                                          SpfftTransformType transformType, int dimX, int dimY,
                                          int dimZ, int batchSize, int numLocalElements,
                                          SpfftIndexFormatType indexFormat, const int* indices) {
   try {
-    *transform = new spfft::BatchTransform(maxNumThreads, transformType, dimX, dimY, dimZ,
-                                            batchSize, numLocalElements, indexFormat, indices);
+    *transform = new spfft::BatchTransform(maxNumThreads, processingUnit, transformType, dimX, dimY,
+                                            dimZ, batchSize, numLocalElements, indexFormat,
+                                            indices);
   } catch (const spfft::GenericError& e) {
     return e.error_code();
   } catch (...) {
@@ -76,13 +88,14 @@ SpfftError spfft_batch_transform_destroy(SpfftBatchTransform transform) {
   return SpfftError::SPFFT_SUCCESS;
 }
 
-SpfftError spfft_batch_transform_forward(SpfftBatchTransform transform, double* output,
+SpfftError spfft_batch_transform_forward(SpfftBatchTransform transform,
+                                          SpfftProcessingUnitType inputLocation, double* output,
                                           SpfftScalingType scaling) {
   if (!transform) {
     return SpfftError::SPFFT_INVALID_HANDLE_ERROR;
   }
   try {
-    reinterpret_cast<spfft::BatchTransform*>(transform)->forward(output, scaling);
+    reinterpret_cast<spfft::BatchTransform*>(transform)->forward(inputLocation, output, scaling);
   } catch (const spfft::GenericError& e) {
     return e.error_code();
   } catch (...) {
@@ -106,12 +119,13 @@ SpfftError spfft_batch_transform_forward_ptr(SpfftBatchTransform transform, cons
   return SpfftError::SPFFT_SUCCESS;
 }
 
-SpfftError spfft_batch_transform_backward(SpfftBatchTransform transform, const double* input) {
+SpfftError spfft_batch_transform_backward(SpfftBatchTransform transform, const double* input,
+                                            SpfftProcessingUnitType outputLocation) {
   if (!transform) {
     return SpfftError::SPFFT_INVALID_HANDLE_ERROR;
   }
   try {
-    reinterpret_cast<spfft::BatchTransform*>(transform)->backward(input);
+    reinterpret_cast<spfft::BatchTransform*>(transform)->backward(input, outputLocation);
   } catch (const spfft::GenericError& e) {
     return e.error_code();
   } catch (...) {
@@ -135,12 +149,15 @@ SpfftError spfft_batch_transform_backward_ptr(SpfftBatchTransform transform, con
   return SpfftError::SPFFT_SUCCESS;
 }
 
-SpfftError spfft_batch_transform_get_space_domain(SpfftBatchTransform transform, double** data) {
+SpfftError spfft_batch_transform_get_space_domain(SpfftBatchTransform transform,
+                                                    SpfftProcessingUnitType processingUnit,
+                                                    double** data) {
   if (!transform) {
     return SpfftError::SPFFT_INVALID_HANDLE_ERROR;
   }
   try {
-    *data = reinterpret_cast<spfft::BatchTransform*>(transform)->space_domain_data();
+    *data =
+        reinterpret_cast<spfft::BatchTransform*>(transform)->space_domain_data(processingUnit);
   } catch (const spfft::GenericError& e) {
     return e.error_code();
   } catch (...) {

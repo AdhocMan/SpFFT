@@ -5,6 +5,7 @@
 #include <vector>
 #include "gtest/gtest.h"
 #include "spfft/batch_transform.hpp"
+#include "spfft/config.h"
 #include "spfft/transform.hpp"
 #include "test_util/generate_indices.hpp"
 #include "util/common_types.hpp"
@@ -12,13 +13,15 @@
 using namespace spfft;
 
 class TestBatchTransform
-    : public ::testing::TestWithParam<std::tuple<int, int, int, int, SpfftTransformType>> {
+    : public ::testing::TestWithParam<
+          std::tuple<int, int, int, int, SpfftTransformType, SpfftProcessingUnitType>> {
 protected:
   int dimX_ = std::get<0>(GetParam());
   int dimY_ = std::get<1>(GetParam());
   int dimZ_ = std::get<2>(GetParam());
   int batchSize_ = std::get<3>(GetParam());
   SpfftTransformType transformType_ = std::get<4>(GetParam());
+  SpfftProcessingUnitType processingUnit_ = std::get<5>(GetParam());
 };
 
 TEST_P(TestBatchTransform, BackwardBatchVsSingle) {
@@ -34,7 +37,7 @@ TEST_P(TestBatchTransform, BackwardBatchVsSingle) {
 
   if (numLocalElements == 0) return;
 
-  BatchTransform batchTransform(1, transformType_, dimX_, dimY_, dimZ_, batchSize_,
+  BatchTransform batchTransform(1, processingUnit_, transformType_, dimX_, dimY_, dimZ_, batchSize_,
                                 numLocalElements, SPFFT_INDEX_TRIPLETS, indices.data());
 
   // For C2C, space domain contains complex values (2 doubles each)
@@ -54,8 +57,8 @@ TEST_P(TestBatchTransform, BackwardBatchVsSingle) {
   }
 
   // Backward with batch transform
-  batchTransform.backward(batchedFreqInput.data());
-  double* batchedSpace = batchTransform.space_domain_data();
+  batchTransform.backward(batchedFreqInput.data(), SPFFT_PU_HOST);
+  double* batchedSpace = batchTransform.space_domain_data(SPFFT_PU_HOST);
 
   // Compare with individual transforms
   for (int b = 0; b < batchSize_; ++b) {
@@ -84,7 +87,7 @@ TEST_P(TestBatchTransform, ForwardBatchVsSingle) {
 
   if (numLocalElements == 0) return;
 
-  BatchTransform batchTransform(1, transformType_, dimX_, dimY_, dimZ_, batchSize_,
+  BatchTransform batchTransform(1, processingUnit_, transformType_, dimX_, dimY_, dimZ_, batchSize_,
                                 numLocalElements, SPFFT_INDEX_TRIPLETS, indices.data());
 
   // For C2C, space domain contains complex values (2 doubles each)
@@ -92,7 +95,7 @@ TEST_P(TestBatchTransform, ForwardBatchVsSingle) {
       (transformType_ == SPFFT_TRANS_C2C) ? 2 * dimX_ * dimY_ * dimZ_ : dimX_ * dimY_ * dimZ_;
 
   // Fill each batch with distinct space domain data
-  double* batchedSpace = batchTransform.space_domain_data();
+  double* batchedSpace = batchTransform.space_domain_data(SPFFT_PU_HOST);
   std::vector<std::vector<double>> spaceInputs(batchSize_);
   for (int b = 0; b < batchSize_; ++b) {
     spaceInputs[b].resize(spaceDomainDoubles);
@@ -105,7 +108,7 @@ TEST_P(TestBatchTransform, ForwardBatchVsSingle) {
 
   // Forward with batch transform
   std::vector<double> batchedFreqOutput(batchSize_ * 2 * numLocalElements);
-  batchTransform.forward(batchedFreqOutput.data(), SPFFT_NO_SCALING);
+  batchTransform.forward(SPFFT_PU_HOST, batchedFreqOutput.data(), SPFFT_NO_SCALING);
 
   // Compare with individual transforms
   for (int b = 0; b < batchSize_; ++b) {
@@ -127,7 +130,7 @@ TEST_P(TestBatchTransform, ForwardBatchVsSingle) {
 }
 
 TEST_P(TestBatchTransform, BackwardForwardRoundTrip) {
-  // Round trip only works in backward→forward direction (freq domain round trip)
+  // Round trip only works in backward->forward direction (freq domain round trip)
   // because compression/decompression only stores a subset of frequencies.
   // For R2C, Hermitian symmetry constraints make freq-domain round trip unreliable
   // with arbitrary input, so we skip R2C (covered by BackwardBatchVsSingle + ForwardBatchVsSingle).
@@ -145,7 +148,7 @@ TEST_P(TestBatchTransform, BackwardForwardRoundTrip) {
 
   if (numLocalElements == 0) return;
 
-  BatchTransform batchTransform(1, transformType_, dimX_, dimY_, dimZ_, batchSize_,
+  BatchTransform batchTransform(1, processingUnit_, transformType_, dimX_, dimY_, dimZ_, batchSize_,
                                 numLocalElements, SPFFT_INDEX_TRIPLETS, indices.data());
 
   // Generate frequency domain input
@@ -154,10 +157,10 @@ TEST_P(TestBatchTransform, BackwardForwardRoundTrip) {
   std::vector<double> freqInputCopy = freqInput;
 
   // Backward then forward with full scaling should recover the input
-  batchTransform.backward(freqInput.data());
+  batchTransform.backward(freqInput.data(), SPFFT_PU_HOST);
 
   std::vector<double> freqOutput(batchSize_ * 2 * numLocalElements);
-  batchTransform.forward(freqOutput.data(), SPFFT_FULL_SCALING);
+  batchTransform.forward(SPFFT_PU_HOST, freqOutput.data(), SPFFT_FULL_SCALING);
 
   for (int i = 0; i < static_cast<int>(freqOutput.size()); ++i) {
     ASSERT_NEAR(freqOutput[i], freqInputCopy[i], 1e-6) << "Element " << i;
@@ -165,9 +168,12 @@ TEST_P(TestBatchTransform, BackwardForwardRoundTrip) {
 }
 
 static auto batch_param_names(
-    const ::testing::TestParamInfo<std::tuple<int, int, int, int, SpfftTransformType>>& info)
+    const ::testing::TestParamInfo<
+        std::tuple<int, int, int, int, SpfftTransformType, SpfftProcessingUnitType>>& info)
     -> std::string {
   std::string name;
+  name += (std::get<5>(info.param) == SPFFT_PU_HOST) ? "Host" : "GPU";
+  name += "_";
   name += (std::get<4>(info.param) == SPFFT_TRANS_C2C) ? "C2C" : "R2C";
   name += "_";
   name += std::to_string(std::get<0>(info.param));
@@ -181,10 +187,23 @@ static auto batch_param_names(
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    FullTest, TestBatchTransform,
+    HostTest, TestBatchTransform,
     ::testing::Combine(::testing::Values(1, 2, 11, 12, 13),
                        ::testing::Values(1, 2, 11, 12, 13),
                        ::testing::Values(1, 2, 11, 12, 13),
                        ::testing::Values(1, 2, 4),
-                       ::testing::Values(SPFFT_TRANS_C2C, SPFFT_TRANS_R2C)),
+                       ::testing::Values(SPFFT_TRANS_C2C, SPFFT_TRANS_R2C),
+                       ::testing::Values(SPFFT_PU_HOST)),
     batch_param_names);
+
+#if defined(SPFFT_CUDA) || defined(SPFFT_ROCM)
+INSTANTIATE_TEST_SUITE_P(
+    GPUTest, TestBatchTransform,
+    ::testing::Combine(::testing::Values(1, 2, 11, 12, 13),
+                       ::testing::Values(1, 2, 11, 12, 13),
+                       ::testing::Values(1, 2, 11, 12, 13),
+                       ::testing::Values(1, 2, 4),
+                       ::testing::Values(SPFFT_TRANS_C2C, SPFFT_TRANS_R2C),
+                       ::testing::Values(SPFFT_PU_GPU)),
+    batch_param_names);
+#endif

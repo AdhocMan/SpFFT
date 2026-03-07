@@ -16,10 +16,11 @@ typedef void* SpfftBatchTransform;
 
 /**
  * Create a batched transform. All batches share the same grid dimensions and frequency indices.
- * Local (non-MPI), host-only.
+ * Local (non-MPI).
  *
  * @param[out] transform Handle to the batch transform.
  * @param[in] maxNumThreads The maximum number of threads to use.
+ * @param[in] processingUnit The processing unit (SPFFT_PU_HOST or SPFFT_PU_GPU).
  * @param[in] transformType The transform type. Can be SPFFT_TRANS_C2C or SPFFT_TRANS_R2C.
  * @param[in] dimX The dimension in x.
  * @param[in] dimY The dimension in y.
@@ -32,6 +33,7 @@ typedef void* SpfftBatchTransform;
  */
 SPFFT_EXPORT SpfftError spfft_batch_transform_create(SpfftBatchTransform* transform,
                                                       int maxNumThreads,
+                                                      SpfftProcessingUnitType processingUnit,
                                                       SpfftTransformType transformType, int dimX,
                                                       int dimY, int dimZ, int batchSize,
                                                       int numLocalElements,
@@ -50,11 +52,15 @@ SPFFT_EXPORT SpfftError spfft_batch_transform_destroy(SpfftBatchTransform transf
  * Execute a forward transform from space domain to frequency domain using internal buffer.
  *
  * @param[in] transform Handle to the batch transform.
+ * @param[in] inputLocation The processing unit, to take the input from. Can be SPFFT_PU_HOST or
+ * SPFFT_PU_GPU (if GPU is set as execution unit).
  * @param[out] output Pointer to frequency domain output for all batches.
  * @param[in] scaling Controls scaling of output.
  * @return Error code or SPFFT_SUCCESS.
  */
-SPFFT_EXPORT SpfftError spfft_batch_transform_forward(SpfftBatchTransform transform, double* output,
+SPFFT_EXPORT SpfftError spfft_batch_transform_forward(SpfftBatchTransform transform,
+                                                       SpfftProcessingUnitType inputLocation,
+                                                       double* output,
                                                        SpfftScalingType scaling);
 
 /**
@@ -75,10 +81,13 @@ SPFFT_EXPORT SpfftError spfft_batch_transform_forward_ptr(SpfftBatchTransform tr
  *
  * @param[in] transform Handle to the batch transform.
  * @param[in] input Pointer to frequency domain input for all batches.
+ * @param[in] outputLocation The processing unit, to place the output at. Can be SPFFT_PU_HOST or
+ * SPFFT_PU_GPU (if GPU is set as execution unit).
  * @return Error code or SPFFT_SUCCESS.
  */
 SPFFT_EXPORT SpfftError spfft_batch_transform_backward(SpfftBatchTransform transform,
-                                                        const double* input);
+                                                        const double* input,
+                                                        SpfftProcessingUnitType outputLocation);
 
 /**
  * Execute a backward transform from frequency domain to space domain.
@@ -95,10 +104,12 @@ SPFFT_EXPORT SpfftError spfft_batch_transform_backward_ptr(SpfftBatchTransform t
  * Get the space domain data pointer.
  *
  * @param[in] transform Handle to the batch transform.
+ * @param[in] processingUnit The processing unit (SPFFT_PU_HOST or SPFFT_PU_GPU).
  * @param[out] data Pointer to space domain data for all batches.
  * @return Error code or SPFFT_SUCCESS.
  */
 SPFFT_EXPORT SpfftError spfft_batch_transform_get_space_domain(SpfftBatchTransform transform,
+                                                                SpfftProcessingUnitType processingUnit,
                                                                 double** data);
 
 /**

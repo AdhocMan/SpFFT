@@ -28,12 +28,15 @@ if(SPFFT_CUDA OR SPFFT_ROCM)
 	list(APPEND SPFFT_GPU_KERNELS
 		transpose/gpu_kernels/local_transpose_kernels.cu
 		compression/gpu_kernels/compression_kernels.cu
+		compression/gpu_kernels/compression_batch_kernels.cu
 		symmetry/gpu_kernels/symmetry_kernels.cu
+		symmetry/gpu_kernels/symmetry_batch_kernels.cu
 		transpose/gpu_kernels/buffered_kernels.cu
 		transpose/gpu_kernels/compact_buffered_kernels.cu
 		)
 	list(APPEND SPFFT_SOURCE_FILES
 		execution/execution_gpu.cpp
+		execution/execution_batch_gpu.cpp
 		gpu_util/gpu_fft_api.cpp
 		)
 	if(SPFFT_MPI)
